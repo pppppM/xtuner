@@ -223,6 +223,8 @@ def parse_args():
     optim_args.add_argument(
         '--lr', default=4e-5, type=float, help='learning rate.')
     optim_args.add_argument(
+        '--lr-min', default=6e-6, type=float, help='min learning rate.')
+    optim_args.add_argument(
         '--wd', default=0.01, type=float, help='weight decay.')
     optim_args.add_argument(
         '--max-grad-norm', default=1, type=float, help='gradient clipping')
@@ -668,7 +670,7 @@ def sft(args):
     warmup_scheduler = LambdaLR(optimizer, warmup_fn)
 
     cosine_scheduler = CosineAnnealingLR(
-        optimizer, T_max=total_steps - warmup_steps, eta_min=0)
+        optimizer, T_max=total_steps - warmup_steps, eta_min=args.lr_min)
 
     start_step = 0
 

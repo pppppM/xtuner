@@ -663,7 +663,7 @@ def sft(args):
     warmup_scheduler = LambdaLR(optimizer, warmup_fn)
 
     cosine_scheduler = CosineAnnealingLR(
-        optimizer, T_max=total_steps - warmup_steps, eta_min=0)
+        optimizer, T_max=total_steps - warmup_steps, eta_min=args.lr_min)
 
     start_step = 0
 
