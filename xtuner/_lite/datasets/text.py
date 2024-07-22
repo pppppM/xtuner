@@ -114,7 +114,7 @@ class SoftPackerForText(torch.utils.data.Dataset):
         self.max_length_per_pack = pack_info['max_length_per_pack']
 
         # The number of data items after packing
-        self._num_packed_samples = len(self.pack_info)
+        self._num_packed_samples = len(self.idx_per_pack)
 
     def __len__(self):
         return self._num_packed_samples
