@@ -47,10 +47,11 @@ from xtuner._lite.accelerate.fsdp import (RECOMPUTE_MODULES,
                                           checkpoint_check_fn, dp_lazy_init,
                                           layer_auto_wrap_policy)
 from xtuner._lite.chat import CHAT_TEMPLATE_MAP
-from xtuner._lite.datasets import (OPENAI_FORMAT_MAP, HardPackerForText,
-                                   SoftPackerForText, TextCollator,
-                                   TextOnlineTokenizeDataset,
-                                   TextTokenizedDataset, TextTokenizeFunction)
+from xtuner._lite.datasets import (OPENAI_FORMAT_MAP, FtdpTokenizeFunction,
+                                   HardPackerForText, SoftPackerForText,
+                                   TextCollator, TextOnlineTokenizeDataset,
+                                   TextTokenizedDataset)
+from xtuner._lite.datasets.ftdp import map_ftdp_tokenized_data
 from xtuner._lite.datasets.load import (LOAD_FN_MAP, load_datasets,
                                         load_from_cache)
 from xtuner._lite.parallel import LengthGroupedSampler, ParallelSampler
@@ -163,10 +164,8 @@ def parse_args():
     data_args.add_argument(
         '--dset-formats',
         nargs='*',
-        default=['openai'],
-        help=('the format of each dataset; it can accept one or the same '
-              'number of args as the number of `datasets`, with one arg '
-              'indicating that all datasets are the same format.'))
+        default=['tokenized'],
+        help=('ftdp processed or tokenized dataset. Default to tokenized.'))
     data_args.add_argument(
         '--dset-sample-ratios',
         nargs='*',
@@ -222,6 +221,8 @@ def parse_args():
 
     optim_args.add_argument(
         '--lr', default=4e-5, type=float, help='learning rate.')
+    optim_args.add_argument(
+        '--lr-min', default=6e-6, type=float, help='min learning rate.')
     optim_args.add_argument(
         '--wd', default=0.01, type=float, help='weight decay.')
     optim_args.add_argument(
@@ -360,28 +361,24 @@ def sft(args):
 
     start_load_data_t = time.time()
 
-    chat_template = CHAT_TEMPLATE_MAP[args.chat_template]
-
     tokenizer = AutoTokenizer.from_pretrained(
         args.tokenizer if args.tokenizer else args.llm,
         trust_remote_code=True,
         padding_side='right')
 
     if args.dset_from_cache:
-        # packer = partial(SoftPackerForText, max_length=args.max_length)
         _datasets = load_from_cache(args.dset_cache_dir)
     else:
 
         tokenize_fns = []
         init_fns = []
         for dset_format in args.dset_formats:
-            # If your data format is not in `SUPPORT_DATA_FORMATS`, you should
-            # redefine a `tokenize_fn`, defining how to convert a piece of raw
-            # data into tokenized data.
-            # The tokenized data must include `input_ids`, `labels``,
-            # and `num_tokens`.
-            tokenize_fn = TextTokenizeFunction(tokenizer, chat_template,
-                                               dset_format)
+            if dset_format == 'processed':
+                tokenize_fn = FtdpTokenizeFunction(tokenizer)
+            elif dset_format == 'tokenized':
+                tokenize_fn = map_ftdp_tokenized_data
+            else:
+                raise NotImplementedError
 
             if args.dset_cache_dir or args.dset_pack_level:
                 # Before caching or packing dataset, you need to first
@@ -437,9 +434,7 @@ def sft(args):
         for dset in _datasets:
             datasets.append(TextTokenizedDataset(dset))
     else:
-        datasets = []
-        for dset in _datasets:
-            datasets.append(TextOnlineTokenizeDataset(dset))
+        raise NotImplementedError
 
     train_dataset = ConcatDataset(datasets)
 
