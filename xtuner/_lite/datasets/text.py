@@ -13,6 +13,8 @@ from tqdm import tqdm
 
 from xtuner._lite import get_logger
 from xtuner._lite.chat import ChatMessages
+from xtuner._lite.parallel.sequence_parallel import (get_sp_world_size,
+                                                     pad_for_sequence_parallel)
 from xtuner.utils import DEFAULT_PAD_TOKEN_INDEX, IGNORE_INDEX
 from .format import OPENAI_FORMAT_MAP
 
@@ -200,10 +202,12 @@ class SoftPackerForText(torch.utils.data.Dataset):
         return packed
 
     @classmethod
-    def get_pack_info(cls, dataset, max_length):
+    def get_pack_info(cls, dataset, max_length, seed=None):
 
         _ori_lens = dataset['num_tokens']
         inds = [i for i in range(len(dataset))]
+        if seed is not None:
+            random.seed(seed)
         random.shuffle(inds)
 
         item_buffer = []
@@ -238,7 +242,7 @@ class SoftPackerForText(torch.utils.data.Dataset):
         return pack_info
 
     @classmethod
-    def get_pack_infos(cls, datasets, max_length):
+    def get_pack_infos(cls, datasets, max_length, seed=None):
 
         if dist.is_available():
             world_size = dist.get_world_size()
@@ -255,7 +259,8 @@ class SoftPackerForText(torch.utils.data.Dataset):
         end = min((rank + 1) * avg_num, num_dsets)
         desc = f'[Rank {rank}] Soft Packing'
         for ind in tqdm(range(start, end), desc=desc):
-            pack_infos.append(cls.get_pack_info(datasets[ind], max_length))
+            pack_infos.append(
+                cls.get_pack_info(datasets[ind], max_length, seed))
 
         if dist.is_available() and world_size > 1:
             dist.barrier()
@@ -321,7 +326,7 @@ class HardPackerForText(torch.utils.data.Dataset):
         return max_length
 
     @classmethod
-    def get_pack_info(cls, dataset, max_length):
+    def get_pack_info(cls, dataset, max_length, seed=None):
 
         _ori_lens = dataset['num_tokens']
 
@@ -337,6 +342,8 @@ class HardPackerForText(torch.utils.data.Dataset):
         # Ultimately, dataset[3] and dataset[1] will be combined into a new
         # data, and dataset[2] and dataset[0] will be combined into a new data.
         inds = [i for i in range(len(dataset))]
+        if seed is not None:
+            random.seed(seed)
         random.shuffle(inds)
         shfl_inds = inds
 
@@ -364,7 +371,7 @@ class HardPackerForText(torch.utils.data.Dataset):
         }
 
     @classmethod
-    def get_pack_infos(cls, datasets, max_length):
+    def get_pack_infos(cls, datasets, max_length, seed=None):
 
         if dist.is_available():
             world_size = dist.get_world_size()
@@ -381,7 +388,8 @@ class HardPackerForText(torch.utils.data.Dataset):
         end = min((rank + 1) * avg_num, num_dsets)
         desc = f'[Rank {rank}] Hard Packing'
         for ind in tqdm(range(start, end), desc=desc):
-            pack_infos.append(cls.get_pack_info(datasets[ind], max_length))
+            pack_infos.append(
+                cls.get_pack_info(datasets[ind], max_length, seed))
 
         if dist.is_available() and world_size > 1:
             dist.barrier()
@@ -511,6 +519,16 @@ class TextCollator():
             input_ids = torch.stack(input_ids)
             labels = torch.stack(labels)
             attention_mask = torch.stack(attention_mask)
+
+        if get_sp_world_size() > 1:
+            ori_seq_len = input_ids.shape[1]
+            input_ids = pad_for_sequence_parallel(input_ids, pad_index)
+            labels = pad_for_sequence_parallel(labels, IGNORE_INDEX)
+            attention_mask = pad_for_sequence_parallel(attention_mask, 0)
+            pad_seq_len = input_ids.shape[1] - ori_seq_len
+            if pad_seq_len > 0:
+                pad_num_token = torch.tensor([pad_seq_len]).int()
+                num_tokens = torch.cat([num_tokens, pad_num_token])
 
         if input_ids.shape != labels.shape:
             logger.error(f'[instances] {instances}')

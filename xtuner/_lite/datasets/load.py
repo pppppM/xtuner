@@ -314,10 +314,11 @@ def load_local_datasets(paths,
 
     if dist.is_available() and world_size > 1:
         logger.info('Waiting for other ranks...... ')
-        dist.barrier()
 
         timeout = timedelta(
-            minutes=int(os.getenv('XTUNER_DATASET_TIMEOUT', default=30)))
+            minutes=int(os.getenv('XTUNER_DATASET_TIMEOUT', default=60)))
+        group = dist.new_group(backend='gloo', timeout=timeout)
+        dist.monitored_barrier(group=group, timeout=timeout)
 
         if rank == 0:
             logger.info(f'The default timeout is {timeout}. The environment '
@@ -325,8 +326,6 @@ def load_local_datasets(paths,
                         'For example, setting `XTUNER_DATASET_TIMEOUT=120` '
                         'means the timeout is set to two hours.')
         logger.info('All gahter datasets... ')
-
-        group = dist.new_group(backend='gloo', timeout=timeout)
 
         buffers = [None] * world_size
         dist.all_gather_object(buffers, rank_datasets, group=group)
