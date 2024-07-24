@@ -6,7 +6,6 @@ import os
 import sys
 import time
 from collections import OrderedDict
-from contextlib import nullcontext
 from datetime import datetime, timedelta
 from functools import partial
 
@@ -20,7 +19,7 @@ from mmengine.dist import infer_launcher, init_dist
 from mmengine.runner import set_random_seed
 from mmengine.utils import get_git_hash
 from mmengine.utils.dl_utils import collect_env
-from peft import LoraConfig, get_peft_model
+from torch.distributed._tensor import Replicate
 from torch.distributed.algorithms._checkpoint.checkpoint_wrapper import \
     apply_activation_checkpointing
 from torch.distributed.checkpoint.state_dict import (StateDictOptions,
@@ -30,8 +29,9 @@ from torch.distributed.device_mesh import init_device_mesh
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 from torch.distributed.fsdp import MixedPrecision
 from torch.distributed.fsdp.api import CPUOffload, ShardingStrategy
-from torch.distributed.fsdp.sharded_grad_scaler import ShardedGradScaler
-from torch.distributed.fsdp.wrap import _or_policy
+from torch.distributed.tensor.parallel import (ColwiseParallel,
+                                               RowwiseParallel,
+                                               parallelize_module)
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import CosineAnnealingLR, LambdaLR
 from torch.utils.data import ConcatDataset, DataLoader
@@ -40,12 +40,10 @@ from transformers.utils.import_utils import (is_flash_attn_2_available,
                                              is_torch_sdpa_available)
 
 from xtuner._lite import AutoTokenizer, get_logger
-from xtuner._lite.accelerate import (LORA_TARGET_MAP, LoadWoInit,
-                                     dispatch_modules, packed_sequence)
+from xtuner._lite.accelerate import (LoadWoInit, dispatch_modules,
+                                     packed_sequence)
 from xtuner._lite.accelerate.fsdp import (RECOMPUTE_MODULES,
-                                          all_required_grad_wrap_policy,
-                                          checkpoint_check_fn, dp_lazy_init,
-                                          dp_sp_lazy_init,
+                                          checkpoint_check_fn, dp_tp_lazy_init,
                                           layer_auto_wrap_policy)
 from xtuner._lite.chat import CHAT_TEMPLATE_MAP
 from xtuner._lite.datasets import (OPENAI_FORMAT_MAP, HardPackerForText,
@@ -55,10 +53,6 @@ from xtuner._lite.datasets import (OPENAI_FORMAT_MAP, HardPackerForText,
 from xtuner._lite.datasets.load import (LOAD_FN_MAP, load_datasets,
                                         load_from_cache)
 from xtuner._lite.parallel import LengthGroupedSampler, ParallelSampler
-from xtuner._lite.parallel.sequence_parallel import (
-    get_dp_mesh, get_dp_world_size, get_sp_group, get_sp_mesh,
-    get_sp_world_size, init_sp_device_mesh, reduce_sequence_parallel_loss,
-    split_for_sequence_parallel)
 
 logger = get_logger()
 
@@ -95,29 +89,6 @@ def parse_args():
         help=('repo id or local path of the tokenizer. '
               'Defaults to the same as `model`'))
     model_args.add_argument(
-        '--use-lora', action='store_true', help='Apply the adapter to LLM.')
-    model_args.add_argument(
-        '--lora-targets',
-        default=None,
-        nargs='*',
-        help='The names of the modules to apply the adapter to. ')
-    model_args.add_argument(
-        '--lora-r', default=64, type=int, help="Not updating vit's parameters")
-    model_args.add_argument(
-        '--lora-alpha',
-        default=16,
-        type=int,
-        help='The alpha parameter for Lora scaling.')
-    model_args.add_argument(
-        '--lora-dropout',
-        default=0.1,
-        type=float,
-        help='The dropout probability for Lora layers.')
-    model_args.add_argument(
-        '--lora-bias',
-        default='none',
-        help='The dropout probability for Lora layers.')
-    model_args.add_argument(
         '--dtype',
         default='auto',
         choices=['fp16', 'bf16', 'auto'],
@@ -139,7 +110,8 @@ def parse_args():
         choices=['full', 'hybrid'],
         help=('The sharding strategy to be used for distributed training.'))
     model_args.add_argument('--cpu-offload', action='store_true', help=(''))
-    model_args.add_argument('--sp-size', type=int, default=1, help='')
+    model_args.add_argument(
+        '--tp-size', type=int, default=1, help='Tensor Parallel Size')
 
     data_args = parser.add_argument_group('data', 'Dataset Related Settings')
     data_args.add_argument(
@@ -304,24 +276,6 @@ def build_llm_model(args, config, world_size, dtype=torch.float32):
     # Ensure all numerical values in the optimizer are fp32.
     # FSDP will use low precision during forward.
     llm.to(dtype)
-
-    if args.use_lora:
-        llm.requires_grad_(False)
-        if world_size > 1:
-            llm.to(dtype)
-
-        if args.lora_targets is None:
-            llm_cls = llm.__class__.__name__
-            args.lora_targets = LORA_TARGET_MAP[llm_cls]
-        llm_lora_cfg = LoraConfig(
-            target_modules=args.lora_targets,
-            r=args.lora_r,
-            lora_alpha=args.lora_alpha,
-            lora_dropout=args.lora_dropout,
-            bias=args.lora_bias,
-            task_type='CAUSAL_LM')
-        llm = get_peft_model(llm, llm_lora_cfg)
-
     return llm
 
 
@@ -335,12 +289,8 @@ def sft(args):
     set_random_seed(args.seed)
 
     world_size = int(os.environ['WORLD_SIZE'])
-    sp_size = args.sp_size
-
-    init_sp_device_mesh(sp_size)
-    dp_mesh = get_dp_mesh()
-    sp_mesh = get_sp_mesh()
-    dp_size = get_dp_world_size()
+    tp_size = args.tp_size
+    dp_size = world_size // tp_size
 
     if args.global_batch_size < dp_size or args.global_batch_size % dp_size:
         raise ValueError(f'The `global_batch_size`({args.global_batch_size}) '
@@ -358,7 +308,14 @@ def sft(args):
                                'folder, which may lead to inaccurate '
                                'cache results.')
 
+    device_mesh = init_device_mesh(
+        'cuda', (dp_size, tp_size), mesh_dim_names=('dp', 'tp'))
+
+    dp_mesh = device_mesh['dp']
+    tp_mesh = device_mesh['tp']
+
     rank = dist.get_rank()
+
     timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
 
     objects = [timestamp]
@@ -536,13 +493,9 @@ def sft(args):
 
     if args.dtype == 'fp16':
         dtype = torch.float16
-        autocast = torch.cuda.amp.autocast(enabled=True, dtype=dtype)
-        scaler = ShardedGradScaler()
     elif args.dtype == 'bf16':
         if torch.cuda.is_bf16_supported():
             dtype = torch.bfloat16
-            autocast = torch.cuda.amp.autocast(enabled=True, dtype=dtype)
-            scaler = None
         else:
             raise RuntimeError('The device does not support `bf16`, '
                                'please set `dtype` to `fp16`.')
@@ -579,22 +532,42 @@ def sft(args):
 
     dist.barrier()
 
-    if get_sp_world_size() > 1:
-        param_init_fn = partial(
-            dp_sp_lazy_init,
-            module_map=meta_llm_map,
-            dp_mesh=dp_mesh,
-            sp_mesh=sp_mesh)
-    else:
-        param_init_fn = partial(
-            dp_lazy_init, module_map=meta_llm_map, dp_mesh=dp_mesh)
+    if args.tp_size > 1:
+        layer_tp_plan = {
+            'attention.wqkv': ColwiseParallel(),
+            'attention.wo': RowwiseParallel(),
+            'feed_forward.w1': ColwiseParallel(),
+            'feed_forward.w2': RowwiseParallel(),
+            'feed_forward.w3': ColwiseParallel(),
+        }
 
-    policies = [layer_auto_wrap_policy]
-    if args.use_lora:
-        policies.append(all_required_grad_wrap_policy)
+        for layer in meta_llm.model.layers:
+            attention = layer.attention
+            attention.num_heads = attention.num_heads // tp_mesh.size()
+            attention.hidden_size = attention.hidden_size // tp_mesh.size()
+            parallelize_module(
+                module=layer,
+                device_mesh=tp_mesh,
+                parallelize_plan=layer_tp_plan,
+            )
+
+        meta_llm = parallelize_module(
+            module=meta_llm,
+            device_mesh=tp_mesh,
+            parallelize_plan={
+                'model.tok_embeddings':
+                RowwiseParallel(input_layouts=Replicate(), ),
+                'output': ColwiseParallel(output_layouts=Replicate(), ),
+            })
+
+    param_init_fn = partial(
+        dp_tp_lazy_init,
+        module_map=meta_llm_map,
+        dp_mesh=dp_mesh,
+        tp_mesh=tp_mesh)
 
     if args.shard_strategy == 'full':
-        fsdp_device_mesh = init_device_mesh('cuda', (world_size, ))
+        fsdp_device_mesh = dp_mesh
         strategy = ShardingStrategy.FULL_SHARD
     elif args.shard_strategy == 'hybrid':
         fsdp_device_mesh = init_device_mesh('cuda', (dp_size // 8, 8))
@@ -608,7 +581,7 @@ def sft(args):
         device_mesh=fsdp_device_mesh,
         sharding_strategy=strategy,
         cpu_offload=CPUOffload(offload_params=args.cpu_offload),
-        auto_wrap_policy=partial(_or_policy, policies=policies),
+        auto_wrap_policy=layer_auto_wrap_policy,
         mixed_precision=MixedPrecision(
             param_dtype=dtype, reduce_dtype=dtype, buffer_dtype=dtype),
         device_id=torch.cuda.current_device(),
@@ -725,35 +698,17 @@ def sft(args):
             attention_mask = data['attention_mask'].cuda()
             num_tokens = data['num_tokens'].cuda()
 
-            packed_ctx = packed_sequence(
-                num_tokens, enable=pack_batch, sp_size=get_sp_world_size())
+            packed_ctx = packed_sequence(num_tokens, enable=pack_batch)
 
-            with packed_ctx, autocast if args.use_lora else nullcontext():
-                if get_sp_world_size() > 1:
-                    sp_group = get_sp_group()
-                    # `dim` is 1 as the shape of tensor is (bs, seq_len, ...)
-                    input_ids = split_for_sequence_parallel(
-                        input_ids, dim=1, sp_group=sp_group)
-                    labels = split_for_sequence_parallel(
-                        labels, dim=1, sp_group=sp_group)
+            with packed_ctx:
 
                 outputs = shard_llm(
                     input_ids=input_ids,
                     labels=labels,
                     attention_mask=attention_mask)
 
-                loss = outputs.loss
-                if get_sp_world_size() > 1:
-                    tokens_cal_loss = (labels != -100).sum()
-                    loss = reduce_sequence_parallel_loss(
-                        loss, tokens_cal_loss, sp_group)
-
-                avg_iter_loss = loss / iters_per_step
-
-                if scaler and args.use_lora:
-                    scaler.scale(avg_iter_loss).backward()
-                else:
-                    avg_iter_loss.backward()
+                avg_iter_loss = outputs.loss / iters_per_step
+                avg_iter_loss.backward()
 
             step_loss += avg_iter_loss.item()
             if args.dset_pack_level == 'soft':
@@ -761,10 +716,9 @@ def sft(args):
                 # still smaller than the max length after packing, will be
                 # padded to the max length. The last element of num tokens
                 # represents the count of pad tokens.
-                step_consumed_tokens += num_tokens[:-1].sum(
-                ) / get_sp_world_size()
+                step_consumed_tokens += num_tokens[:-1].sum() / tp_size
             else:
-                step_consumed_tokens += num_tokens.sum() / get_sp_world_size()
+                step_consumed_tokens += num_tokens.sum() / tp_size
 
         grad_norm = shard_llm.clip_grad_norm_(args.max_grad_norm)
         optimizer.step()
@@ -806,9 +760,6 @@ def sft(args):
                 saved_llm.to(dtype)
                 for name, param in full_model_state_dict.items():
                     set_module_tensor_to_device(saved_llm, name, 'cpu', param)
-
-                if args.use_lora:
-                    saved_llm = saved_llm.merge_and_unload()
 
                 saved_llm.save_pretrained(hf_dir)
                 tokenizer.save_pretrained(hf_dir)
