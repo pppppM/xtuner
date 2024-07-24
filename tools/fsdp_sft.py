@@ -403,8 +403,6 @@ def sft(args):
 
     start_load_data_t = time.time()
 
-    chat_template = CHAT_TEMPLATE_MAP[args.chat_template]
-
     tokenizer = AutoTokenizer.from_pretrained(
         args.tokenizer if args.tokenizer else args.llm,
         trust_remote_code=True,
@@ -414,7 +412,7 @@ def sft(args):
         # packer = partial(SoftPackerForText, max_length=args.max_length)
         _datasets = load_from_cache(args.dset_cache_dir)
     else:
-
+        chat_template = CHAT_TEMPLATE_MAP[args.chat_template]
         tokenize_fns = []
         init_fns = []
         for dset_format in args.dset_formats:
