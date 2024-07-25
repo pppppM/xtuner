@@ -14,7 +14,6 @@ import torch
 import torch.distributed as dist
 import torch.distributed.checkpoint as dcp
 from accelerate.utils import set_module_tensor_to_device
-from datasets import Dataset
 from mmengine import mkdir_or_exist
 from mmengine.dist import infer_launcher, init_dist
 from mmengine.runner import set_random_seed
@@ -48,9 +47,8 @@ from xtuner._lite.accelerate.fsdp import (RECOMPUTE_MODULES,
                                           dp_sp_lazy_init,
                                           layer_auto_wrap_policy)
 from xtuner._lite.chat import CHAT_TEMPLATE_MAP
-from xtuner._lite.datasets import (OPENAI_FORMAT_MAP, HardPackerForText,
-                                   SoftPackerForText, TextCollator,
-                                   TextOnlineTokenizeDataset,
+from xtuner._lite.datasets import (OPENAI_FORMAT_MAP, SoftPackerForText,
+                                   TextCollator, TextOnlineTokenizeDataset,
                                    TextTokenizedDataset, TextTokenizeFunction)
 from xtuner._lite.datasets.load import (LOAD_FN_MAP, load_datasets,
                                         load_from_cache)
@@ -409,8 +407,17 @@ def sft(args):
         padding_side='right')
 
     if args.dset_from_cache:
-        # packer = partial(SoftPackerForText, max_length=args.max_length)
-        _datasets = load_from_cache(args.dset_cache_dir)
+        if args.dset_pack_level == 'soft':
+            init_fn = partial(
+                SoftPackerForText.from_cache, max_length=args.max_length)
+        elif args.dset_pack_level == 'hard':
+            raise NotImplementedError
+        else:
+            init_fn = partial(
+                TextTokenizeFunction.from_cache, max_length=args.max_length)
+        _datasets = load_from_cache(args.dset_cache_dir, init_fn)
+        dist.barrier()
+
     else:
         chat_template = CHAT_TEMPLATE_MAP[args.chat_template]
         tokenize_fns = []
@@ -424,16 +431,17 @@ def sft(args):
             tokenize_fn = TextTokenizeFunction(tokenizer, chat_template,
                                                dset_format)
 
-            if args.dset_cache_dir or args.dset_pack_level:
-                # Before caching or packing dataset, you need to first
-                # tokenize the dataset and then transform it into a
-                # Huggingface `Dataset`
-                init_fn = Dataset.from_list
+            if args.dset_pack_level == 'soft':
+                init_fn = partial(
+                    SoftPackerForText, max_length=args.max_length)
+            elif args.dset_cache_dir:
+                init_fn = partial(
+                    TextTokenizedDataset, max_length=args.max_length)
             else:
-                # Use online tokenize when there is no need to cache or pack
-                # the dataset, thereby saving startup time.
                 init_fn = partial(
                     TextOnlineTokenizeDataset, tokenize_fn=tokenize_fn)
+                # Online tokenization is used when not using a pack dataset,
+                # saving startup time.
                 tokenize_fn = None
 
             tokenize_fns.append(tokenize_fn)
@@ -452,40 +460,13 @@ def sft(args):
 
     if (args.dset_pack_level or args.cache_dir) and rank == 0 and args.debug:
         # Only the tokenized datasets can count the number of tokens
-        num_tokens = sum(sum(dset['num_tokens']) for dset in _datasets)
+        num_tokens = sum(sum(dset.total_tokens) for dset in _datasets)
         logger.debug(f'[Dataset] {num_tokens} tokens.')
 
-    num_datasets = len(_datasets)
-    datasets = []
-    if args.dset_pack_level and args.dset_pack_level == 'soft':
-        pack_infos = SoftPackerForText.get_pack_infos(_datasets,
-                                                      args.max_length)
-        for i in range(num_datasets):
-            _infos = pack_infos[i]
-            _dset = _datasets[i]
-            _packed_dset = SoftPackerForText(_dset, args.max_length, _infos)
-            datasets.append(_packed_dset)
-    elif args.dset_pack_level and args.dset_pack_level == 'hard':
-        pack_infos = HardPackerForText.get_pack_infos(_datasets,
-                                                      args.max_length)
-        for i in range(num_datasets):
-            _infos = pack_infos[i]
-            _dset = _datasets[i]
-            _packed_dset = HardPackerForText(_dset, args.max_length, _infos)
-            datasets.append(_packed_dset)
-    elif args.dset_pack_level is None and args.dset_cache_dir:
-        datasets = []
-        for dset in _datasets:
-            datasets.append(TextTokenizedDataset(dset))
-    else:
-        datasets = []
-        for dset in _datasets:
-            datasets.append(TextOnlineTokenizeDataset(dset))
-
-    train_dataset = ConcatDataset(datasets)
+    train_dataset = ConcatDataset(_datasets)
 
     if args.dset_pack_level and rank == 0:
-        ori_samples = sum([len(dset) for dset in _datasets])
+        ori_samples = sum([dset.num_samples for dset in _datasets])
         packed_samples = len(train_dataset)
         logger.info(f'[Dataset] (Original) {ori_samples} samples.')
         logger.info(f'[Dataset] (Packed) {packed_samples} samples.')

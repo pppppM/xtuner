@@ -194,11 +194,9 @@ class SoftPackerForText(CacheDataset):
         pack_info_dir = os.path.join(cache_dir,
                                      f'pack-info-soft-{self.max_length}')
 
-        if len(self.dataset.cache_files) == 0 and dist.is_available(
-        ) and dist.get_rank() == 0:
+        if len(self.dataset.cache_files) == 0:
             self.dataset.save_to_disk(dset_dir)
-        if len(self.pack_info.cache_files) == 0 and dist.is_available(
-        ) and dist.get_rank() == 0:
+        if len(self.pack_info.cache_files) == 0:
             self.pack_info.save_to_disk(pack_info_dir)
 
         self._cached = True
