@@ -2,7 +2,7 @@
 import torch.distributed as dist
 
 from ..comm import all_to_all
-from .setup_distributed import get_sp_group, get_sp_world_size
+from ..setup import get_sp_group, get_sp_world_size
 
 
 def pre_process_for_sequence_parallel_attn(query_states,

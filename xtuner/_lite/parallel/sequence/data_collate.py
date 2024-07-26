@@ -1,7 +1,7 @@
 # Copyright (c) OpenMMLab. All rights reserved.
 import torch
 
-from .setup_distributed import get_sp_world_size
+from ..setup import get_sp_world_size
 
 
 def pad_for_sequence_parallel(tensor, padding_value, dim=-1):

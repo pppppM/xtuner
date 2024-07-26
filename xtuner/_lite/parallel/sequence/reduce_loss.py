@@ -1,7 +1,7 @@
 import torch
 import torch.distributed as dist
 
-from .setup_distributed import get_sp_group
+from ..setup import get_sp_group
 
 
 class _ReduceLoss(torch.autograd.Function):
