@@ -732,7 +732,7 @@ def llava_sft(args):
             train_dataloader.sampler.set_epoch(epoch, epoch_inner_step)
             data_iterator = iter(train_dataloader)
 
-        if step <= warmup_steps:
+        if step < warmup_steps:
             warmup_scheduler.step()
             cur_lr = warmup_scheduler.get_lr()[0]
         else:
