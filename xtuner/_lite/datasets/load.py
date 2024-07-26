@@ -29,8 +29,8 @@ def load_jsonl(file):
     dset = []
     with open(file) as f:
         for line in f:
-            dset.append(line)
-            # dset.append(json.loads(line))
+            # dset.append(line)
+            dset.append(json.loads(line))
     return dset
 
 
@@ -277,13 +277,13 @@ def load_local_datasets(paths,
 
             map_fn = file_map_fns[ind]
 
-            if suffix == '.jsonl':
-                if map_fn is None:
-                    map_fn = [json.loads]
-                elif isinstance(map_fn, list):
-                    map_fn = [json.loads] + map_fn
-                else:
-                    map_fn = [json.loads, map_fn]
+            # if suffix == '.jsonl':
+            #     if map_fn is None:
+            #         map_fn = [json.loads]
+            #     elif isinstance(map_fn, list):
+            #         map_fn = [json.loads] + map_fn
+            #     else:
+            #         map_fn = [json.loads, map_fn]
 
             # fixme
             assert map_fn is not None
@@ -299,9 +299,8 @@ def load_local_datasets(paths,
                 try:
                     desc = f'[RANK {rank}] Map local file {ind}'
                     dset = multi_thread_map(map_fn, dset, desc, num_proc)
-                    logger.debug(
-                        f'[File {ind}] Mapped Sample:\n{dset[0] if dset else None}'
-                    )
+                    logger.debug(f'[File {ind}] Mapped Sample:\n'
+                                 f'{dset[0] if dset else None}')
                 except:
                     raise RuntimeError(f'[RANK {rank}] Map {file} failed.')
 
