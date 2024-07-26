@@ -1,7 +1,7 @@
 # Copyright (c) OpenMMLab. All rights reserved.
 import torch.distributed as dist
 
-from .comm import all_to_all
+from ..comm import all_to_all
 from .setup_distributed import get_sp_group, get_sp_world_size
 
 
