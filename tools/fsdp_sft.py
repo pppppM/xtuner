@@ -55,9 +55,9 @@ from xtuner._lite.datasets.load import (LOAD_FN_MAP, load_datasets,
 from xtuner._lite.parallel import (LengthGroupedSampler, ParallelSampler,
                                    get_dp_mesh, get_dp_world_size,
                                    get_sp_group, get_sp_mesh,
-                                   get_sp_world_size, init_sp_device_mesh,
+                                   get_sp_world_size,
                                    reduce_sequence_parallel_loss,
-                                   split_for_sequence_parallel)
+                                   setup_parallel, split_for_sequence_parallel)
 
 logger = get_logger()
 
@@ -336,7 +336,7 @@ def sft(args):
     world_size = int(os.environ['WORLD_SIZE'])
     sp_size = args.sp_size
 
-    init_sp_device_mesh(sp_size)
+    setup_parallel(sp_size=sp_size)
     dp_mesh = get_dp_mesh()
     sp_mesh = get_sp_mesh()
     dp_size = get_dp_world_size()

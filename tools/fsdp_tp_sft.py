@@ -52,7 +52,8 @@ from xtuner._lite.datasets import (OPENAI_FORMAT_MAP, HardPackerForText,
                                    TextTokenizedDataset, TextTokenizeFunction)
 from xtuner._lite.datasets.load import (LOAD_FN_MAP, load_datasets,
                                         load_from_cache)
-from xtuner._lite.parallel import LengthGroupedSampler, ParallelSampler
+from xtuner._lite.parallel import (LengthGroupedSampler, ParallelSampler,
+                                   get_dp_mesh, get_tp_mesh, setup_parallel)
 
 logger = get_logger()
 
@@ -308,11 +309,9 @@ def sft(args):
                                'folder, which may lead to inaccurate '
                                'cache results.')
 
-    device_mesh = init_device_mesh(
-        'cuda', (dp_size, tp_size), mesh_dim_names=('dp', 'tp'))
-
-    dp_mesh = device_mesh['dp']
-    tp_mesh = device_mesh['tp']
+    setup_parallel(tp_size=tp_size)
+    dp_mesh = get_dp_mesh()
+    tp_mesh = get_tp_mesh()
 
     rank = dist.get_rank()
 
