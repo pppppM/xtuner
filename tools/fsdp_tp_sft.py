@@ -39,11 +39,7 @@ from transformers.utils.import_utils import (is_flash_attn_2_available,
                                              is_torch_sdpa_available)
 
 from xtuner._lite import AutoTokenizer, get_logger
-from xtuner._lite.accelerate import (LoadWoInit, dispatch_modules,
-                                     packed_sequence)
-from xtuner._lite.accelerate.fsdp import (RECOMPUTE_MODULES,
-                                          checkpoint_check_fn, dp_tp_lazy_init,
-                                          layer_auto_wrap_policy)
+from xtuner._lite.accelerate import dispatch_modules, packed_sequence
 from xtuner._lite.chat import CHAT_TEMPLATE_MAP
 from xtuner._lite.datasets import (OPENAI_FORMAT_MAP, SoftPackerForText,
                                    TextCollator, TextOnlineTokenizeDataset,
@@ -52,6 +48,9 @@ from xtuner._lite.datasets.load import (LOAD_FN_MAP, load_datasets,
                                         load_from_cache)
 from xtuner._lite.parallel import (LengthGroupedSampler, ParallelSampler,
                                    get_dp_mesh, get_tp_mesh, setup_parallel)
+from xtuner._lite.parallel.fsdp import (RECOMPUTE_MODULES, LoadWoInit,
+                                        checkpoint_check_fn, dp_tp_lazy_init,
+                                        layer_auto_wrap_policy)
 
 logger = get_logger()
 
