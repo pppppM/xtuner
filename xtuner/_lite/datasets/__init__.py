@@ -3,7 +3,6 @@ from .format import OPENAI_FORMAT_MAP
 from .llava import (LlavaCollator, LlavaRawDataset, LlavaTokenizedDataset,
                     LlavaTokenizeFunction, SoftPackerForLlava)
 from .load import load_datasets
-from .load_utils import all_to_all_list
 from .text import (HardPackerForText, SoftPackerForText, TextCollator,
                    TextOnlineTokenizeDataset, TextTokenizedDataset,
                    TextTokenizeFunction)
@@ -12,6 +11,5 @@ __all__ = [
     'OPENAI_FORMAT_MAP', 'LlavaCollator', 'LlavaRawDataset',
     'LlavaTokenizedDataset', 'LlavaTokenizeFunction', 'SoftPackerForLlava',
     'load_datasets', 'HardPackerForText', 'SoftPackerForText', 'TextCollator',
-    'TextOnlineTokenizeDataset', 'TextTokenizedDataset',
-    'TextTokenizeFunction', 'all_to_all_list'
+    'TextOnlineTokenizeDataset', 'TextTokenizedDataset', 'TextTokenizeFunction'
 ]

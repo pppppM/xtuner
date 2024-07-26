@@ -13,8 +13,8 @@ from torch import distributed as dist
 from tqdm import tqdm
 
 from xtuner._lite import get_logger
+from xtuner._lite.parallel import all_to_all_list
 from .cache import CacheDataset
-from .load_utils import all_to_all_list
 
 logger = get_logger()
 

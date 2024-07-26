@@ -52,11 +52,12 @@ from xtuner._lite.datasets import (OPENAI_FORMAT_MAP, SoftPackerForText,
                                    TextTokenizedDataset, TextTokenizeFunction)
 from xtuner._lite.datasets.load import (LOAD_FN_MAP, load_datasets,
                                         load_from_cache)
-from xtuner._lite.parallel import LengthGroupedSampler, ParallelSampler
-from xtuner._lite.parallel.sequence_parallel import (
-    get_dp_mesh, get_dp_world_size, get_sp_group, get_sp_mesh,
-    get_sp_world_size, init_sp_device_mesh, reduce_sequence_parallel_loss,
-    split_for_sequence_parallel)
+from xtuner._lite.parallel import (LengthGroupedSampler, ParallelSampler,
+                                   get_dp_mesh, get_dp_world_size,
+                                   get_sp_group, get_sp_mesh,
+                                   get_sp_world_size, init_sp_device_mesh,
+                                   reduce_sequence_parallel_loss,
+                                   split_for_sequence_parallel)
 
 logger = get_logger()
 

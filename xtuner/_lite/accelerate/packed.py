@@ -2,8 +2,7 @@ from contextlib import contextmanager
 
 import torch
 
-from xtuner._lite.parallel.sequence_parallel import (
-    get_sp_group, split_for_sequence_parallel)
+from xtuner._lite.parallel import get_sp_group, split_for_sequence_parallel
 
 
 @contextmanager

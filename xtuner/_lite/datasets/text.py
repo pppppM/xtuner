@@ -10,8 +10,7 @@ from torch.nn.utils.rnn import pad_sequence
 
 from xtuner._lite import get_logger
 from xtuner._lite.chat import ChatMessages
-from xtuner._lite.parallel.sequence_parallel import (get_sp_world_size,
-                                                     pad_for_sequence_parallel)
+from xtuner._lite.parallel import get_sp_world_size, pad_for_sequence_parallel
 from xtuner.utils import DEFAULT_PAD_TOKEN_INDEX, IGNORE_INDEX
 from .cache import CacheDataset
 from .format import OPENAI_FORMAT_MAP

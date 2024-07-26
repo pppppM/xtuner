@@ -1,7 +1,7 @@
 import torch
 from torch.nn import functional as F
 
-from xtuner._lite.parallel.sequence_parallel import sequence_parallel_wrapper
+from xtuner._lite.parallel import sequence_parallel_wrapper
 
 SUPPORT_FLASH2 = False
 
