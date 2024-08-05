@@ -672,6 +672,7 @@ def sft(args):
     max_memory = torch.cuda.max_memory_allocated()
     logger.info('[Train] Begin Train Loop. The current GPU memory is '
                 f'{(max_memory / 1024**3):.1f}GB')
+    shard_llm.train()
     for step in range(start_step, total_steps):
 
         epoch = step // steps_per_epoch

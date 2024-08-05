@@ -15,7 +15,6 @@ import torch
 import torch.distributed as dist
 import torch.distributed.checkpoint as dcp
 from accelerate.utils import set_module_tensor_to_device
-from datasets import Dataset
 from mmengine import load, mkdir_or_exist
 from mmengine.dist import infer_launcher, init_dist
 from mmengine.runner import set_random_seed
@@ -35,20 +34,19 @@ from torch.distributed.fsdp.wrap import _or_policy
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import CosineAnnealingLR, LambdaLR
 from torch.utils.data import ConcatDataset, DataLoader
-from transformers import (AutoConfig, AutoProcessor)
+from transformers import AutoConfig, AutoProcessor
 from transformers.utils.import_utils import (is_flash_attn_2_available,
                                              is_torch_sdpa_available)
-from xtuner._lite.modelings.llava import LlavaForConditionalGeneration
+
 from xtuner._lite import AutoTokenizer, get_logger
 from xtuner._lite.accelerate import (LORA_TARGET_MAP, dispatch_modules,
                                      packed_sequence)
 from xtuner._lite.chat import CHAT_TEMPLATE_MAP
-from xtuner._lite.datasets import (LlavaCollator,
-                                   LlavaRawDataset, LlavaTokenizedDataset,
+from xtuner._lite.datasets import (LlavaCollator, LlavaTokenizedDataset,
                                    LlavaTokenizeFunction, SoftPackerForLlava)
 from xtuner._lite.datasets.load import (LOAD_FN_MAP, load_datasets,
                                         load_from_cache)
-from xtuner._lite.modelings import register_remote_code
+from xtuner._lite.modelings.llava import LlavaForConditionalGeneration
 from xtuner._lite.parallel import LengthGroupedSampler, ParallelSampler
 from xtuner._lite.parallel.fsdp import (RECOMPUTE_MODULES, LoadWoInit,
                                         all_required_grad_wrap_policy,
@@ -505,7 +503,6 @@ def llava_sft(args):
                     LlavaTokenizedDataset,
                     image_processor=img_processor,
                     max_length=args.max_length)
-        
 
             init_fns.append(init_fn)
             tokenize_fns.append(tokenize_fn)
@@ -713,6 +710,7 @@ def llava_sft(args):
     max_memory = torch.cuda.max_memory_allocated()
     logger.info('[Train] Begin Train Loop. The current GPU memory is '
                 f'{(max_memory / 1024**3):.1f}GB')
+    shard_llava.train()
     for step in range(start_step, total_steps):
 
         epoch = step // per_epoch_steps
