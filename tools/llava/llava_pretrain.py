@@ -15,7 +15,6 @@ import torch
 import torch.distributed as dist
 import torch.distributed.checkpoint as dcp
 from accelerate.utils import set_module_tensor_to_device
-from datasets import Dataset
 from mmengine import load, mkdir_or_exist
 from mmengine.dist import infer_launcher, init_dist
 from mmengine.runner import set_random_seed
@@ -44,11 +43,14 @@ from xtuner._lite import AutoTokenizer, get_logger
 from xtuner._lite.accelerate import (LORA_TARGET_MAP, dispatch_modules,
                                      packed_sequence)
 from xtuner._lite.chat import CHAT_TEMPLATE_MAP
-from xtuner._lite.datasets import (LlavaCollator, LlavaRawDataset,LlavaTokenizedDataset,
+from xtuner._lite.datasets import (LlavaCollator, LlavaRawDataset,
+                                   LlavaTokenizedDataset,
                                    LlavaTokenizeFunction, SoftPackerForLlava)
 from xtuner._lite.datasets.load import (LOAD_FN_MAP, load_datasets,
                                         load_from_cache)
-from xtuner._lite.modelings import register_remote_code, LlavaForConditionalGeneration, EnhancedLlavaConfig, LlavaProcessor
+from xtuner._lite.modelings import (EnhancedLlavaConfig,
+                                    LlavaForConditionalGeneration,
+                                    LlavaProcessor, register_remote_code)
 from xtuner._lite.parallel import LengthGroupedSampler, ParallelSampler
 from xtuner._lite.parallel.fsdp import (RECOMPUTE_MODULES, LoadWoInit,
                                         all_required_grad_wrap_policy,
@@ -316,7 +318,10 @@ def build_llava_model(args,
             del llava.vision_tower
             with LoadWoInit():
                 llm = AutoModelForCausalLM.from_pretrained(
-                    args.llm, config=_cfg.text_config)
+                    args.llm,
+                    config=_cfg.text_config,
+                    attn_implementation=_cfg.text_config.attn_implementation,
+                    torch_dtype=_cfg.text_config.torch_dtype)
                 vit = CLIPVisionModel.from_pretrained(
                     args.vit, config=_cfg.vision_config)
             llava.language_model = llm
@@ -483,7 +488,7 @@ def llava_pretrain(args):
 
     img_token = chat_template.image_token
     need_resize_emb = False
-    if len(tokenizer.encode(img_token,  add_special_tokens=False)) > 1:
+    if len(tokenizer.encode(img_token, add_special_tokens=False)) > 1:
         tokenizer.add_tokens([img_token], special_tokens=True)
         img_token_id = tokenizer.convert_tokens_to_ids([img_token])[0]
         logger.info(f'[Tokenizer] Added a new token `{img_token}`, '
@@ -644,7 +649,6 @@ def llava_pretrain(args):
     if not use_lora:
         autocast = nullcontext()
         scaler = None
-
 
     if is_flash_attn_2_available():
         _text_config.attn_implementation = 'flash_attention_2'

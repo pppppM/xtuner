@@ -298,7 +298,11 @@ def map_meta_modules(model, meta_model):
 def build_llm_model(args, config, world_size, dtype=torch.float32):
     with LoadWoInit():
         llm = AutoModelForCausalLM.from_pretrained(
-            args.llm, config=config, trust_remote_code=True)
+            args.llm,
+            config=config,
+            trust_remote_code=True,
+            attn_implementation=config.attn_implementation,
+            torch_dtype=config.torch_dtype)
 
     # Ensure all numerical values in the optimizer are fp32.
     # FSDP will use low precision during forward.
