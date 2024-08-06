@@ -7,6 +7,7 @@ from torch.distributed._tensor import DTensor, distribute_tensor
 def dp_lazy_init(module, module_map, dp_mesh):
     device = torch.cuda.current_device()
     module.to_empty(device=torch.cuda.current_device(), recurse=False)
+    torch.cuda.empty_cache()
 
     if dp_mesh.get_local_rank() == 0:
         master_module = module_map[module]
@@ -22,16 +23,11 @@ def dp_lazy_init(module, module_map, dp_mesh):
         for name, param in module.named_parameters(recurse=False):
 
             p_copy = master_params[name].to(device).to(param.dtype)
-            # if param.requires_grad:
-            #     p_copy = p_copy.to(device).to(param.dtype)
-            # else:
-            #     p_copy = p_copy.to(device)
             param.data.copy_(p_copy)
 
         for name, buffer in module.named_buffers(recurse=False):
 
             b_copy = master_buffers[name].to(device).to(buffer.dtype)
-            # b_copy = b_copy.to(device)
             buffer.data.copy_(b_copy)
 
 
@@ -39,6 +35,7 @@ def dp_lazy_init(module, module_map, dp_mesh):
 def dp_sp_lazy_init(module, module_map, dp_mesh, sp_mesh):
     device = torch.cuda.current_device()
     module.to_empty(device=torch.cuda.current_device(), recurse=False)
+    torch.cuda.empty_cache()
 
     if dp_mesh.get_local_rank() == 0 and sp_mesh.get_local_rank() == 0:
         master_module = module_map[module]
@@ -64,6 +61,7 @@ def dp_sp_lazy_init(module, module_map, dp_mesh, sp_mesh):
 def dp_tp_lazy_init(module, module_map, dp_mesh, tp_mesh):
     device = torch.cuda.current_device()
     module.to_empty(device=torch.cuda.current_device(), recurse=False)
+    torch.cuda.empty_cache()
 
     if dp_mesh.get_local_rank() != 0:
         return
