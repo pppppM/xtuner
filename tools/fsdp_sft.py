@@ -50,9 +50,9 @@ from xtuner._lite.datasets.load import (LOAD_FN_MAP, load_datasets,
 from xtuner._lite.parallel import (LengthGroupedSampler, ParallelSampler,
                                    get_dp_mesh, get_dp_world_size,
                                    get_sp_group, get_sp_mesh,
-                                   get_sp_world_size,
-                                   reduce_sequence_parallel_loss,
-                                   setup_parallel, split_for_sequence_parallel)
+                                   get_sp_world_size, reduce_sp_loss_for_debug,
+                                   rescale_sp_loss, setup_parallel,
+                                   split_for_sequence_parallel)
 from xtuner._lite.parallel.fsdp import (RECOMPUTE_MODULES, LoadWoInit,
                                         all_required_grad_wrap_policy,
                                         checkpoint_check_fn, dp_lazy_init,
@@ -729,9 +729,12 @@ def sft(args):
 
                 loss = outputs.loss
                 if get_sp_world_size() > 1:
-                    tokens_cal_loss = (labels != -100).sum()
-                    loss = reduce_sequence_parallel_loss(
-                        loss, tokens_cal_loss, sp_group)
+                    loss = rescale_sp_loss(outputs.loss, labels, sp_group)
+
+                    if args.debug:
+                        loss_debug = reduce_sp_loss_for_debug(
+                            outputs.loss, labels, sp_group)
+                        logger.info(loss_debug)
 
                 avg_iter_loss = loss / iters_per_step
 
