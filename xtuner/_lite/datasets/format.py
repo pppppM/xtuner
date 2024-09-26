@@ -47,6 +47,67 @@ class Alpaca2Openai():
             }
 
 
+class XTunerFormat2Openai():
+
+    @classmethod
+    def source_format(cls):
+        data = {
+            'conversation': [{
+                'system': 'SYSTEM',
+                'input': 'INPUT',
+                'output': 'OUTPUT'
+            }, {
+                'input': 'INPUT',
+                'output': 'OUTPUT'
+            }]
+        }
+        return data
+
+    @classmethod
+    def target_format(cls):
+        data = {
+            'messages': [
+                {
+                    'role': 'system',
+                    'content': 'SYSTEM'
+                },
+                {
+                    'role': 'user',
+                    'content': 'INPUT'
+                },
+                {
+                    'role': 'assistant',
+                    'content': 'OUTPUT'
+                },
+                {
+                    'role': 'user',
+                    'content': 'INPUT'
+                },
+                {
+                    'role': 'assistant',
+                    'content': 'OUTPUT'
+                },
+            ]
+        }
+        return data
+
+    @staticmethod
+    def convert(data):
+        ROLE_MAPPING = {
+            'system': 'system',
+            'input': 'user',
+            'output': 'assistant'
+        }
+        messages = []
+        for single_turn_conversation in data['conversation']:
+            for role, content in single_turn_conversation.items():
+                messages.append({
+                    'role': ROLE_MAPPING[role],
+                    'content': content
+                })
+        return {'messages': messages}
+
+
 def llava_to_openai(data):
 
     image_token = '<image>'
@@ -152,5 +213,6 @@ OPENAI_FORMAT_MAP = {
     'llava': llava_to_openai,
     'llava_interleave': llava_to_openai_interleave,
     'alpaca': Alpaca2Openai.convert,
+    'xtuner': XTunerFormat2Openai.convert,
     'openai': lambda x: x,
 }
