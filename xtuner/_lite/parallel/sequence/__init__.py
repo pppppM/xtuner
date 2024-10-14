@@ -8,7 +8,7 @@ from .data_collate import (pad_cumulative_len_for_sequence_parallel,
                            pad_for_sequence_parallel)
 from .ops import (gather_for_sequence_parallel, gather_forward_split_backward,
                   split_for_sequence_parallel, split_forward_gather_backward)
-from .reduce_loss import reduce_sequence_parallel_loss
+from .rescale_loss import reduce_sp_loss_for_debug, rescale_sp_loss
 
 __all__ = [
     'sequence_parallel_wrapper', 'pre_process_for_sequence_parallel_attn',
@@ -16,5 +16,5 @@ __all__ = [
     'init_dist', 'gather_for_sequence_parallel',
     'split_forward_gather_backward', 'gather_forward_split_backward',
     'pad_cumulative_len_for_sequence_parallel', 'pad_for_sequence_parallel',
-    'reduce_sequence_parallel_loss'
+    'rescale_sp_loss', 'reduce_sp_loss_for_debug'
 ]
