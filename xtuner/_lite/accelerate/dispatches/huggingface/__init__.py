@@ -70,6 +70,20 @@ def _dispatch_rms_norm_forward(module):
     return rms_norm_forward.__name__
 
 
+def _dispatch_internvl2_forward(module):
+    assert module.__class__.__name__ == 'InternVLChatModel'
+    from .internvl2 import internvl2_forward
+    _dispatch_forward_fn(module, internvl2_forward)
+    return internvl2_forward.__name__
+
+
+def _dispatch_llama_forward(module):
+    assert module.__class__.__name__ == 'LlamaFlashAttention2'
+    from .llama import llama_flash_attn_forward
+    _dispatch_forward_fn(module, llama_flash_attn_forward)
+    return llama_flash_attn_forward.__name__
+
+
 DISPATCH_MAP = {
     'Qwen2RMSNorm': _dispatch_rms_norm_forward,
     'Qwen2FlashAttention2': _dispatch_qwen2_attn_flash_forward,
@@ -84,7 +98,10 @@ DISPATCH_MAP = {
     'InternLM3RMSNorm': _dispatch_rms_norm_forward,
     'InternLM3CrossDecoder': _dispatch_internlm3_cross_decoder_forward,
     'InternLM3FlashSelfAttention2': _dispatch_internlm3_varlen_self_attn_forward,
-    'InternLM3FlashCrossAttention2': _dispatch_internlm3_varlen_cross_attn_forward
+    'InternLM3FlashCrossAttention2': _dispatch_internlm3_varlen_cross_attn_forward,
+    'InternVLChatModel': _dispatch_internvl2_forward,  # to support sp
+    'LlamaFlashAttention2': _dispatch_llama_forward,
+    'LlamaRMSNorm': _dispatch_rms_norm_forward,
 }
 
 
