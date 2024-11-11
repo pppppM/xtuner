@@ -688,7 +688,12 @@ def sft(args):
                     labels=labels,
                     attention_mask=attention_mask)
 
-                avg_iter_loss = outputs.loss / iters_per_step
+                loss = outputs.loss
+                if torch.isnan(loss) and (labels != -100).sum() == 0:
+                    # When all labels are -100, the CE loss will return NaN and requires special handling.
+                    loss = outputs.logits.sum()*0
+
+                avg_iter_loss = loss / iters_per_step
                 avg_iter_loss.backward()
 
             step_loss += avg_iter_loss.item()

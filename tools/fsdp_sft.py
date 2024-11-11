@@ -728,6 +728,10 @@ def sft(args):
                     attention_mask=attention_mask)
 
                 loss = outputs.loss
+                if torch.isnan(loss) and (labels != -100).sum() == 0:
+                    # When all labels are -100, the CE loss will return NaN and requires special handling.
+                    loss = outputs.logits.sum()*0
+
                 if get_sp_world_size() > 1:
                     tokens_cal_loss = (labels != -100).sum()
                     loss = reduce_sequence_parallel_loss(

@@ -15,7 +15,7 @@ class _ReduceLoss(torch.autograd.Function):
         loss_sum = mean_loss * loss_scale
         dist.all_reduce(loss_sum, group=process_group)
         dist.all_reduce(loss_scale, group=process_group)
-        loss = loss_sum / loss_scale
+        loss = loss_sum / (loss_scale+1e-12)
         return loss
 
     @staticmethod
