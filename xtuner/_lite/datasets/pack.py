@@ -26,6 +26,8 @@ class SoftPackDataset(torch.utils.data.Dataset):
             _infos = self.get_pack_infos(dataset, i, num_tokens[i])
             pack_infos.append(_infos)
         self.pack_infos = concatenate_datasets(pack_infos)
+        self.max_length = self.pack_infos['max_length']
+        assert len(self) == len(self.max_length)
 
     def get_pack_infos(self, dataset, dataset_id, num_tokens):
         # _ori_lens = dataset['num_tokens']

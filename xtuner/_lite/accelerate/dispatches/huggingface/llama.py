@@ -4,7 +4,7 @@ from typing import Optional, Tuple
 import torch
 from mmengine import MessageHub
 
-from ._attention import SUPPORT_FLASH2, flash_attn_wo_mask, varlen_flash_attn
+from .._attention import flash_attn_wo_mask, varlen_flash_attn
 
 def rotate_half(x):
     """Rotates half the hidden dims of the input."""
@@ -69,7 +69,10 @@ Optional[Tuple[torch.Tensor]]]:
     key_states = key_states.view(bsz, q_len, self.num_key_value_heads, self.head_dim).transpose(1, 2)
     value_states = value_states.view(bsz, q_len, self.num_key_value_heads, self.head_dim).transpose(1, 2)
 
-    cos, sin = position_embeddings
+    # TODO: If the user does not provide position_ids externally, this code cannot be used, and serious bugs will occur.
+    # cos, sin = position_embeddings
+    cos, sin = self.rotary_emb(value_states, position_ids)
+
     query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
 
     if past_key_value is not None:
@@ -105,9 +108,8 @@ Optional[Tuple[torch.Tensor]]]:
         key_states = key_states.to(target_dtype)
         value_states = value_states.to(target_dtype)
 
-    assert SUPPORT_FLASH2
     cumulative_lengths = attn_context.get_info('cumulative_lengths')
-    if cumulative_lengths is not None and SUPPORT_FLASH2 and bsz == 1:
+    if cumulative_lengths is not None and bsz == 1:
         max_seqlen = attn_context.get_info('max_seqlen')
         attn_output = varlen_flash_attn(query_states, key_states, value_states,
                                         cumulative_lengths, max_seqlen, dropout_p=dropout_rate)
