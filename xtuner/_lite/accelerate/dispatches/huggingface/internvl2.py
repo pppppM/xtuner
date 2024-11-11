@@ -186,7 +186,7 @@ def internvl2_forward(
         shift_labels = labels[..., 1:].contiguous()
 
         # Flatten tokens
-        shift_hidden_states = shift_hidden_states.view(-1, self.self.language_model.config.hidden_size)
+        shift_hidden_states = shift_hidden_states.view(-1, self.language_model.config.hidden_size)
         shift_labels = shift_labels.view(-1)
 
         if LigerFusedLinearCrossEntropyLoss is None:
