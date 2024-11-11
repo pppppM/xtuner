@@ -12,6 +12,11 @@ import math
 import os
 from xtuner._lite.parallel.sequence import split_for_sequence_parallel
 
+try:
+    from liger_kernel.transformers.fused_linear_cross_entropy import LigerFusedLinearCrossEntropyLoss
+except ImportError:
+    LigerFusedLinearCrossEntropyLoss = None
+
 
 def rescale_sp_loss(loss_per_sp_rank,
                     labels_per_sp_rank,
@@ -156,33 +161,73 @@ def internvl2_forward(
         attention_mask = None
         attn_context.update_info('position_ids', position_ids)
 
-    outputs = self.language_model(
-        inputs_embeds=input_embeds,
-        attention_mask=attention_mask,
-        position_ids=position_ids,
-        past_key_values=past_key_values,
-        use_cache=use_cache,
-        output_attentions=output_attentions,
-        output_hidden_states=output_hidden_states,
-        return_dict=return_dict,
-    )
-    logits = outputs.logits
+    use_liger_kernel = os.environ.get('USE_LIGER_KERNEL')
+    if use_liger_kernel and labels is not None and self.is_training:
+        output_attentions = output_attentions if output_attentions is not None else self.language_model.config.output_attentions
+        output_hidden_states = (
+            output_hidden_states if output_hidden_states is not None else self.language_model.config.output_hidden_states
+        )
+        return_dict = return_dict if return_dict is not None else self.language_model.config.use_return_dict
 
-    loss = None
-    if labels is not None:
-        # Shift so that tokens < n predict n
-        shift_logits = logits[..., :-1, :].contiguous()
+        # decoder outputs consists of (dec_features, layer_state, dec_hidden, dec_attn)
+        outputs = self.language_model.model(
+            inputs_embeds=input_embeds,
+            attention_mask=attention_mask,
+            position_ids=position_ids,
+            past_key_values=past_key_values,
+            use_cache=use_cache,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict,
+        )
+        hidden_states = outputs[0]
+
+        shift_hidden_states = hidden_states[..., :-1, :].contiguous()
         shift_labels = labels[..., 1:].contiguous()
-        # Flatten the tokens
-        loss_fct = CrossEntropyLoss()
-        shift_logits = shift_logits.view(-1, self.language_model.config.vocab_size)
-        shift_labels = shift_labels.view(-1)
-        # Enable model parallelism
-        shift_labels = shift_labels.to(shift_logits.device)
-        loss = loss_fct(shift_logits, shift_labels)
 
+        # Flatten tokens
+        shift_hidden_states = shift_hidden_states.view(-1, self.config.hidden_size)
+        shift_labels = shift_labels.view(-1)
+
+        if LigerFusedLinearCrossEntropyLoss is None:
+            raise ImportError('LigerFusedLinearCrossEntropyLoss is not available, '
+                              'please install liger-kernel by "pip install liger_kernel".')
+        lce = LigerFusedLinearCrossEntropyLoss()
+        if hasattr(self.language_model, 'lm_head'):
+            loss = lce(self.language_model.lm_head.weight, shift_hidden_states, shift_labels)
+        else:
+            loss = lce(self.language_model.output.weight, shift_hidden_states, shift_labels)
         if sp_size > 1:
             loss = rescale_sp_loss(loss, shift_labels, sp_mesh=sp_mesh)
+        logits = None
+    else:
+        outputs = self.language_model(
+            inputs_embeds=input_embeds,
+            attention_mask=attention_mask,
+            position_ids=position_ids,
+            past_key_values=past_key_values,
+            use_cache=use_cache,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict,
+        )
+        logits = outputs.logits
+
+        loss = None
+        if labels is not None:
+            # Shift so that tokens < n predict n
+            shift_logits = logits[..., :-1, :].contiguous()
+            shift_labels = labels[..., 1:].contiguous()
+            # Flatten the tokens
+            loss_fct = CrossEntropyLoss()
+            shift_logits = shift_logits.view(-1, self.language_model.config.vocab_size)
+            shift_labels = shift_labels.view(-1)
+            # Enable model parallelism
+            shift_labels = shift_labels.to(shift_logits.device)
+            loss = loss_fct(shift_logits, shift_labels)
+
+            if sp_size > 1:
+                loss = rescale_sp_loss(loss, shift_labels, sp_mesh=sp_mesh)
 
     if not return_dict:
         output = (logits,) + outputs[1:]
