@@ -162,7 +162,7 @@ def internvl2_forward(
         attn_context.update_info('position_ids', position_ids)
 
     use_liger_kernel = os.environ.get('USE_LIGER_KERNEL')
-    if use_liger_kernel and labels is not None and self.is_training:
+    if use_liger_kernel and labels is not None and self.training:
         output_attentions = output_attentions if output_attentions is not None else self.language_model.config.output_attentions
         output_hidden_states = (
             output_hidden_states if output_hidden_states is not None else self.language_model.config.output_hidden_states
@@ -186,7 +186,7 @@ def internvl2_forward(
         shift_labels = labels[..., 1:].contiguous()
 
         # Flatten tokens
-        shift_hidden_states = shift_hidden_states.view(-1, self.config.hidden_size)
+        shift_hidden_states = shift_hidden_states.view(-1, self.self.language_model.config.hidden_size)
         shift_labels = shift_labels.view(-1)
 
         if LigerFusedLinearCrossEntropyLoss is None:
