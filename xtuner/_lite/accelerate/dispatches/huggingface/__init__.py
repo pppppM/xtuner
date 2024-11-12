@@ -84,6 +84,13 @@ def _dispatch_llama_forward(module):
     return llama_flash_attn_forward.__name__
 
 
+def _dispatch_minicpmv_forward(module):
+    assert module.__class__.__name__ == 'MiniCPMV'
+    from .minicpmv import minicpmv_forward
+    _dispatch_forward_fn(module, minicpmv_forward)
+    return minicpmv_forward.__name__
+
+
 DISPATCH_MAP = {
     'Qwen2RMSNorm': _dispatch_rms_norm_forward,
     'Qwen2FlashAttention2': _dispatch_qwen2_attn_flash_forward,
@@ -99,9 +106,10 @@ DISPATCH_MAP = {
     'InternLM3CrossDecoder': _dispatch_internlm3_cross_decoder_forward,
     'InternLM3FlashSelfAttention2': _dispatch_internlm3_varlen_self_attn_forward,
     'InternLM3FlashCrossAttention2': _dispatch_internlm3_varlen_cross_attn_forward,
-    'InternVLChatModel': _dispatch_internvl2_forward,  # to support sp
+    'InternVLChatModel': _dispatch_internvl2_forward,  # to support sp and liger
     'LlamaFlashAttention2': _dispatch_llama_forward,
     'LlamaRMSNorm': _dispatch_rms_norm_forward,
+    'MiniCPMV': _dispatch_minicpmv_forward,  # to support sp and liger
 }
 
 
