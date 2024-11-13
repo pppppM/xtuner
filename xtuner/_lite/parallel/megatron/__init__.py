@@ -4,6 +4,7 @@ from .internlm3 import (megatron_internlm3, megatron_internlm3_casual,
                         megatron_internlm3_reward)
 
 from .qwen2 import (megatron_qwen2_casual, megatron_qwen2, megatron_qwen2_reward)
+from .internlm3_moe import megatron_internlm3_moe, megatron_internlm3_moe_casual
 
 MEGATRON_MAP = {
     'InternLM2ForCausalLM': megatron_internlm2_casual,
