@@ -233,7 +233,7 @@ def build_train_dataloader(args, train_dataset, collate_fn):
     dp_mesh = get_dp_mesh()
     if args.group_by_length:
         if args.dset_pack:
-            length_property = 'max_length'
+            length_property = 'longest'
         else:
             length_property = 'length'
         sampler = VLMLengthGroupedSampler(train_dataset, dp_mesh,

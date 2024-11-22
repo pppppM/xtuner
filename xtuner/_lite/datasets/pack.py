@@ -27,8 +27,10 @@ class SoftPackDataset(torch.utils.data.Dataset):
             _infos = self.get_pack_infos(dataset, i, num_tokens[i])
             pack_infos.append(_infos)
         self.pack_infos = concatenate_datasets(pack_infos)
-        self.max_length = self.pack_infos['max_length']
-        assert len(self) == len(self.max_length)
+
+    @property
+    def longest(self):
+        return self.pack_infos['longest']
 
     def get_pack_infos(self, dataset, dataset_id, num_tokens):
         # _ori_lens = dataset['num_tokens']
@@ -37,33 +39,32 @@ class SoftPackDataset(torch.utils.data.Dataset):
 
         item_buffer = []
         length_buffer = []
-        max_length_one_pack = 0
+        longest = 0
 
         pack_infos = []
         for shfl_i in inds:
             if num_tokens[shfl_i] + sum(length_buffer) <= self.target:
                 item_buffer.append(shfl_i)
                 length_buffer.append(num_tokens[shfl_i])
-                max_length_one_pack = max(max_length_one_pack,
-                                          num_tokens[shfl_i])
+                longest = max(longest, num_tokens[shfl_i])
             else:
                 if len(item_buffer) > 0:
                     info = {
                         'dataset_id': dataset_id,
                         'indices': item_buffer,
-                        'max_length': int(max_length_one_pack)
+                        'longest': int(longest)
                     }
                     pack_infos.append(info)
 
                 item_buffer = [shfl_i]
                 length_buffer = [num_tokens[shfl_i]]
-                max_length_one_pack = num_tokens[shfl_i]
+                longest = num_tokens[shfl_i]
 
         if len(item_buffer) > 0:
             info = {
                 'dataset_id': dataset_id,
                 'indices': item_buffer,
-                'max_length': int(max_length_one_pack)
+                'longest': int(longest)
             }
 
             pack_infos.append(info)
