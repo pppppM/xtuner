@@ -8,6 +8,7 @@ import math
 from concurrent.futures import ThreadPoolExecutor
 from tqdm import tqdm
 import copy
+import random
 
 from ..json import calculate_json_sha256
 from ..jsonl import calculate_jsonl_sha256
@@ -42,7 +43,8 @@ class BaseOrigDataset(Dataset):
                  image_token_str='<image>',
                  group_by_length=False,
                  pack_data=False,
-                 pack_data_cache_dir=None):
+                 pack_data_cache_dir=None,
+                 random_sample=False):
         self.data_name = data_name
         self.max_length = max_length
         self.group_by_length = group_by_length
@@ -52,7 +54,10 @@ class BaseOrigDataset(Dataset):
         self.image_token_str = image_token_str
         self.tokenizer = tokenizer
 
-        self.root = data.get('media_root', '')
+        try:
+            self.root = data['media_root']
+        except KeyError:
+            self.root = data.get('root', '')
         logger.info(f"{dist.get_rank()} ======= Start to process dataset: {os.path.basename(data['annotation'])}")
 
         self.annotation = data['annotation']
@@ -61,7 +66,10 @@ class BaseOrigDataset(Dataset):
         repeat_time = data.get('repeat_time', 1)
         if repeat_time < 1:
             # If repeat_time is less than 1, select a portion of the data
-            self.raw_data = self.raw_data[:int(len(self.raw_data) * repeat_time)]
+            if random_sample:
+                self.raw_data = random.sample(self.raw_data, k=int(len(self.raw_data) * repeat_time))
+            else:
+                self.raw_data = self.raw_data[:int(len(self.raw_data) * repeat_time)]
         if repeat_time > 1:
             assert isinstance(repeat_time, int)
             # Repeat the list if repeat_time is greater than 1
