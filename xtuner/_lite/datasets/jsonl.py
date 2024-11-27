@@ -44,7 +44,7 @@ class JsonlDataset(torch.utils.data.Dataset):
         assert sample_ratio <= 1
         self.tokenize_fn = tokenize_fn
         self.path = path
-        self.tokenizer_workers = int(os.environ.get('TOKENIZER_WORKERS', 8))
+        self.tokenizer_workers = int(os.environ.get('XTUNER_TOKENIZE_WORKERS', 8))
 
         if cache_dir:
             if os.path.exists(cache_dir):
@@ -151,7 +151,7 @@ class JsonlDataset(torch.utils.data.Dataset):
             tokenized = list(
                 tqdm(
                     executor.map(self.tokenize_fn, dataset_shard,
-                                 chunksize=len(dataset_shard) // self.tokenizer_workers),
+                                 chunksize=max(1, len(dataset_shard) // self.tokenizer_workers)),
                     desc=desc,
                     total=len(dataset_shard)))
 

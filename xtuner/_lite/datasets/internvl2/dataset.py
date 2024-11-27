@@ -53,7 +53,7 @@ class BaseOrigDataset(Dataset):
         self.chat_template = chat_template
         self.image_token_str = image_token_str
         self.tokenizer = tokenizer
-        self.tokenizer_workers = int(os.environ.get('TOKENIZER_WORKERS', 8))
+        self.tokenizer_workers = int(os.environ.get('XTUNER_TOKENIZE_WORKERS', 8))
 
         try:
             self.root = data['media_root']
@@ -153,7 +153,7 @@ class BaseOrigDataset(Dataset):
             tokenized = list(
                 tqdm(
                     executor.map(self.pre_tokenize_fn_for_pack, dataset_shard,
-                                 chunksize=len(dataset_shard) // self.tokenizer_workers),
+                                 chunksize=max(1, len(dataset_shard) // self.tokenizer_workers)),
                     desc=desc,
                     total=len(dataset_shard)))
 
