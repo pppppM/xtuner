@@ -57,6 +57,11 @@ def megatron_internvl2_casual(meta_model,
         if i < num_recompute_layers:
             checkpoint(block)
 
+    if hasattr(meta_model.language_model.model.layers[0], 'set_modules_to_forward_prefetch'):
+        for layer_cur, layer_next in zip(meta_model.language_model.model.layers[:-1],
+                                         meta_model.language_model.model.layers[1:]):
+            layer_cur.set_modules_to_forward_prefetch([layer_next])
+
     meta_model.mlp1.apply(param_init_fn)
 
     try:
