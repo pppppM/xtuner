@@ -58,6 +58,7 @@ def megatron_internvl2_casual(meta_model,
             checkpoint(block)
 
     if hasattr(meta_model.language_model.model.layers[0], 'set_modules_to_forward_prefetch'):
+        meta_model.vision_model.set_modules_to_forward_prefetch([meta_model.language_model.model.layers[0]])
         for layer_cur, layer_next in zip(meta_model.language_model.model.layers[:-1],
                                          meta_model.language_model.model.layers[1:]):
             layer_cur.set_modules_to_forward_prefetch([layer_next])
@@ -80,5 +81,7 @@ def megatron_internvl2_casual(meta_model,
         mesh=dp_mesh,
         mp_policy=mp_policy,
         reshard_after_forward=reshard_after_forward)  # False is zero2, True is zero3
-    return model
 
+    if hasattr(model, 'set_modules_to_forward_prefetch'):
+        model.set_modules_to_forward_prefetch([model.vision_model])
+    return model
