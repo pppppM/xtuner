@@ -206,7 +206,8 @@ class BaseOrigDataset(Dataset):
 
             if i == 0:
                 input_ = self._process_media_format_first_round(input_, media_type, image_grids)
-                input_ = self.chat_template['system'] + input_
+                # TODO: support system prompt
+                # input_ = self.chat_template['system'] + input_
                 input_encode = self.tokenizer.encode(input_, add_special_tokens=True)
             else:
                 input_encode = self.tokenizer.encode(input_, add_special_tokens=False)
