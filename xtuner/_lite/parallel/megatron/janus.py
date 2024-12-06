@@ -32,14 +32,23 @@ def megatron_janus_casual(meta_model,
         tp_mesh=tp_mesh,
     )
 
-    if freeze_style == 'mode1':
-        meta_model.language_model.model.apply(param_init_fn)
+    num_layers = len(meta_model.language_model.model.layers)
+    num_recompute_layers = int(num_layers * recompute_ratio)
+
+    for i, block in enumerate(meta_model.language_model.model.layers):
+        block.apply(param_init_fn)
+
         fully_shard(
-            meta_model.language_model.model,
+            block,
             mesh=dp_mesh,
             mp_policy=mp_policy,
             reshard_after_forward=reshard_after_forward,
         )
+
+        if i < num_recompute_layers:
+            checkpoint(block)
+
+    if freeze_style == 'mode1':
         meta_model.language_model.lm_head.apply(param_init_fn)
         fully_shard(
             meta_model.language_model.lm_head,
@@ -54,6 +63,14 @@ def megatron_janus_casual(meta_model,
             mp_policy=mp_policy,
             reshard_after_forward=reshard_after_forward,
         )
+
+        meta_model.vision_model.apply(param_init_fn)
+        meta_model.aligner.apply(param_init_fn)
+        meta_model.gen_vision_model.apply(param_init_fn)
+        meta_model.gen_aligner.apply(param_init_fn)
+        meta_model.gen_embed.apply(param_init_fn)
+        meta_model.language_model.model.embed_tokens.apply(param_init_fn)
+        meta_model.language_model.model.norm.apply(param_init_fn)
 
         model = fully_shard(
             meta_model,
