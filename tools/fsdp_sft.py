@@ -574,7 +574,7 @@ def sft(args):
         sample_ratios=args.dset_sample_ratios,
         map_fns=tokenize_fns,
         file_pattern=args.file_pattern,
-        # max_length=args.max_length
+        max_length=args.max_length
     )
 
     if args.dset_pack_level and rank == 0 and args.debug:
@@ -907,6 +907,10 @@ def sft(args):
             step_loss += loss.item()
             step_consumed_tokens += num_tokens.sum() / sp_size / tp_size
 
+        step_reduced_loss = torch.Tensor([step_loss]).to(DEVICE)
+        dist.all_reduce(step_reduced_loss)
+        step_reduced_loss = step_reduced_loss.item() / world_size
+
         grad_norm = clip_grad_norm_(
             requried_grad_params, fsdp_mesh, args.max_grad_norm)
 
@@ -927,6 +931,7 @@ def sft(args):
             logger.info(f'[Train] (Epoch {epoch + 1}) Step '
                         f'{step + 1}/{total_steps}  '
                         f'lr: {cur_lr:.6f}  loss: {step_loss:.3f}  '
+                        f'loss(reduced): {step_reduced_loss:.3f}  '
                         f'grad_norm: {grad_norm:.2f}  '
                         f'if_nan_skip: {train_state.if_nan_skip_steps}  '
                         f'max_memory: {(max_memory / 1024**3):.1f}GB  '
