@@ -34,7 +34,6 @@ def megatron_janus_casual(meta_model,
 
     num_layers = len(meta_model.language_model.model.layers)
     num_recompute_layers = int(num_layers * recompute_ratio)
-
     for i, block in enumerate(meta_model.language_model.model.layers):
         block.apply(param_init_fn)
 
@@ -63,11 +62,23 @@ def megatron_janus_casual(meta_model,
             mp_policy=mp_policy,
             reshard_after_forward=reshard_after_forward,
         )
+        meta_model.aligner.apply(param_init_fn)
+        fully_shard(
+            meta_model.aligner,
+            mesh=dp_mesh,
+            mp_policy=mp_policy,
+            reshard_after_forward=reshard_after_forward,
+        )
+        meta_model.gen_aligner.apply(param_init_fn)
+        fully_shard(
+            meta_model.gen_aligner,
+            mesh=dp_mesh,
+            mp_policy=mp_policy,
+            reshard_after_forward=reshard_after_forward,
+        )
 
         meta_model.vision_model.apply(param_init_fn)
-        meta_model.aligner.apply(param_init_fn)
         meta_model.gen_vision_model.apply(param_init_fn)
-        meta_model.gen_aligner.apply(param_init_fn)
         meta_model.gen_embed.apply(param_init_fn)
         meta_model.language_model.model.embed_tokens.apply(param_init_fn)
         meta_model.language_model.model.norm.apply(param_init_fn)
@@ -78,8 +89,37 @@ def megatron_janus_casual(meta_model,
             mp_policy=mp_policy,
             reshard_after_forward=reshard_after_forward)  # False is zero2, True is zero3
 
-        model.set_reshard_after_backward(False)
+        # TODO: 有 bug
+        # model.set_reshard_after_backward(False)
 
-    else:
-        raise NotImplementedError
+    elif freeze_style == 'mode2':
+        meta_model.gen_vision_model.apply(param_init_fn)
+        fully_shard(
+            meta_model.gen_vision_model,
+            mesh=dp_mesh,
+            mp_policy=mp_policy,
+            reshard_after_forward=reshard_after_forward)
+        meta_model.gen_vision_model.set_reshard_after_backward(False)
+
+        meta_model.vision_model.apply(param_init_fn)
+        fully_shard(
+            meta_model.vision_model,
+            mesh=dp_mesh,
+            mp_policy=mp_policy,
+            reshard_after_forward=reshard_after_forward)
+        meta_model.vision_model.set_reshard_after_backward(False)
+
+        meta_model.gen_head.apply(param_init_fn)
+        meta_model.aligner.apply(param_init_fn)
+        meta_model.gen_aligner.apply(param_init_fn)
+        meta_model.gen_embed.apply(param_init_fn)
+        meta_model.language_model.model.embed_tokens.apply(param_init_fn)
+        meta_model.language_model.model.norm.apply(param_init_fn)
+        meta_model.language_model.lm_head.apply(param_init_fn)
+        model = fully_shard(
+            meta_model,
+            mesh=dp_mesh,
+            mp_policy=mp_policy,
+            reshard_after_forward=reshard_after_forward)
+
     return model
