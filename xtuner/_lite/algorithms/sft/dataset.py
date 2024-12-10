@@ -25,10 +25,11 @@ class SftTokenizeFunction():
 
 class SftCollator():
 
-    def __init__(self, pad_token_id=0, ignore_id=-100, pack_batch=False):
+    def __init__(self, pad_token_id=0, ignore_id=-100, pack_batch=False, max_length=None):
         self.pack_batch = pack_batch
         self.pad_token_id = pad_token_id
         self.ignore_id = ignore_id
+        self.max_length = max_length
 
     def __call__(self, instances):
 
@@ -76,6 +77,26 @@ class SftCollator():
             input_ids = torch.stack(input_ids)
             labels = torch.stack(labels)
             attention_mask = torch.stack(attention_mask)
+
+        if self.max_length:
+            assert isinstance(self.max_length, int)
+
+            input_ids = input_ids[:, :self.max_length]
+            labels = labels[:, :self.max_length]
+            attention_mask = attention_mask[:, :self.max_length]
+
+            _num_tokens = []
+            _cusum = 0
+            for nt in num_tokens.tolist():
+                if _cusum + nt >= self.max_length:
+                    _num_tokens.append(self.max_length - _cusum)
+                    break
+                else:
+                    _num_tokens.append(nt)
+                    _cusum += nt
+            
+            num_tokens = torch.IntTensor(_num_tokens)
+
 
         if input_ids.shape != labels.shape:
             logger.error(f'[instances] {instances}')

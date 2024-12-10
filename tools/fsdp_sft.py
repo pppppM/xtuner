@@ -208,6 +208,7 @@ def parse_args():
     data_args.add_argument(
         '--dset-sample-ratios',
         nargs='*',
+        type=float,
         default=[1.0],
         help=('the sample ratio of each dataset; it can accept one or the '
               'same number of args as the number of `datasets`, with one arg '
@@ -573,7 +574,8 @@ def sft(args):
         sample_ratios=args.dset_sample_ratios,
         map_fns=tokenize_fns,
         file_pattern=args.file_pattern,
-        max_length=args.max_length)
+        # max_length=args.max_length
+    )
 
     if args.dset_pack_level and rank == 0 and args.debug:
         # Only the tokenized datasets can count the number of tokens
@@ -594,7 +596,9 @@ def sft(args):
         logger.info(f'[Dataset] (Packed) {packed_samples} samples.')
 
     assert varlen_attn_is_available()
-    collator = SftCollator(pack_batch=varlen_attn_is_available())
+    collator = SftCollator(
+        pack_batch=varlen_attn_is_available(),
+        max_length=args.max_length)
 
     if args.group_by_length:
         sampler = LengthGroupedSampler(train_dataset, dp_mesh,

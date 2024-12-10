@@ -41,7 +41,6 @@ class JsonDataset(torch.utils.data.Dataset):
                  max_length=None):
         super().__init__()
 
-        assert sample_ratio <= 1
         self.tokenize_fn = tokenize_fn
         self.path = path
         self.tokenizer_workers = int(os.environ.get('XTUNER_TOKENIZE_WORKERS', 8))
@@ -80,7 +79,14 @@ class JsonDataset(torch.utils.data.Dataset):
             dataset = json.load(f)
 
         num_samples = int(len(dataset) * sample_ratio)
-        sampled = random.sample([i for i in range(len(dataset))], num_samples)
+
+        if sample_ratio == 1.0:
+            sampled = [i for i in range(len(dataset))]
+        elif sample_ratio < 1.0:
+            sampled = random.sample([i for i in range(len(dataset))], num_samples)
+        else:
+            sampled = random.choices([i for i in range(len(dataset))], k=num_samples)
+
         self.sampled = sampled
 
         if num_tokens is not None:
