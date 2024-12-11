@@ -94,8 +94,6 @@ class JsonDataset(torch.utils.data.Dataset):
         self.sampled = _sampled * int(sample_ratio)
         self.sampled.extend(random.sample(_sampled, _target_num_samples - len(self.sampled)))
 
-        self.sampled = _sampled
-
         if num_tokens is not None:
             num_tokens = num_tokens[self.sampled]
 
