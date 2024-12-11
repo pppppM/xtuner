@@ -84,7 +84,7 @@ class JsonDataset(torch.utils.data.Dataset):
             assert isinstance(max_length, int)
             _filtered = [x for i, x in enumerate(_sampled) if num_tokens[i] < max_length]
 
-            if len(_filted) < len(_sampled):
+            if len(_filtered) < len(_sampled):
                 missed_num = len(_sampled) - len(_filtered)
                 logger.warning(f"{path} has {missed_num} prompt length>{max_length}, discard.")
 
