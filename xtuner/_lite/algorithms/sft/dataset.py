@@ -47,14 +47,26 @@ class SftCollator():
         num_tokens = []
 
         for data in instances:
+            
+            _input_ids = data['input_ids']
+            _labels = data['labels']
+            _num_tokens = data['num_tokens']
 
-            input_ids.append(torch.LongTensor(data['input_ids']))
-            labels.append(torch.LongTensor(data['labels']))
+            # TODO remove list
+            if isinstance(_num_tokens, list):
+                assert len(_num_tokens) == 1
+                _num_tokens = _num_tokens[0]
+            
+            assert isinstance(_num_tokens, int)
 
-            if isinstance(data['num_tokens'], int):
-                num_tokens.append(data['num_tokens'])
-            else:
-                num_tokens.extend(data['num_tokens'])
+            if self.max_length:
+                _input_ids = _input_ids[:self.max_length]
+                _labels = _labels[:self.max_length]
+                _num_tokens = min(_num_tokens, self.max_length)
+
+            input_ids.append(torch.LongTensor(_input_ids))
+            labels.append(torch.LongTensor(_labels))
+            num_tokens.append(_num_tokens)
 
         attention_mask = [torch.ones_like(ids) for ids in input_ids]
         num_tokens = torch.IntTensor(num_tokens)
@@ -78,26 +90,6 @@ class SftCollator():
             labels = torch.stack(labels)
             attention_mask = torch.stack(attention_mask)
 
-        if self.max_length:
-            assert isinstance(self.max_length, int)
-
-            input_ids = input_ids[:, :self.max_length]
-            labels = labels[:, :self.max_length]
-            attention_mask = attention_mask[:, :self.max_length]
-
-            _num_tokens = []
-            _cusum = 0
-            for nt in num_tokens.tolist():
-                if _cusum + nt >= self.max_length:
-                    _num_tokens.append(self.max_length - _cusum)
-                    break
-                else:
-                    _num_tokens.append(nt)
-                    _cusum += nt
-            
-            num_tokens = torch.IntTensor(_num_tokens)
-
-
         if input_ids.shape != labels.shape:
             logger.error(f'[instances] {instances}')
             logger.error(f'[num_tokens] {num_tokens}')
@@ -106,7 +98,7 @@ class SftCollator():
             raise RuntimeError('The shape of input_ids and labels must be '
                                f'equal, but  found {input_ids.shape} and '
                                f'{labels.shape}.')
-        # TODO support sp
+
         data_dict = {
             'input_ids': input_ids,
             'labels': labels,
