@@ -85,7 +85,7 @@ class JsonDataset(torch.utils.data.Dataset):
             _filtered = [x for i, x in enumerate(_sampled) if num_tokens[i] < max_length]
 
             if len(_filted) < len(_sampled):
-                missed_num = len(sampled) - len(_filtered)
+                missed_num = len(_sampled) - len(_filtered)
                 logger.warning(f"{path} has {missed_num} prompt length>{max_length}, discard.")
 
             _sampled = _filtered
