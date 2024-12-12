@@ -1,15 +1,19 @@
 import time
 from contextlib import contextmanager
+
 from transformers.utils.import_utils import is_flash_attn_2_available
+
 from xtuner._lite import get_device, get_logger, get_torch_device_module
 
 logger = get_logger()
 
 
-
-
 def npu_is_available():
     return get_device() == 'npu'
+
+
+def mlu_is_available():
+    return get_device() == 'mlu'
 
 
 def varlen_attn_is_available():
@@ -27,6 +31,7 @@ def lmdeploy_is_available():
         available = False
 
     return available
+
 
 def liger_kernel_is_available():
 
@@ -53,4 +58,4 @@ def profile_time_and_memory(desc):
     cost_time = time.time() - start_t
 
     logger.success(f'{desc} Elapsed time {cost_time:.2f} seconds, '
-                f'peak gpu memory {max_memory/1024**3:.1f}G')
+                   f'peak gpu memory {max_memory/1024**3:.1f}G')

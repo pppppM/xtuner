@@ -12,6 +12,12 @@ def get_device():
         except ImportError:
             pass
 
+    try:
+        import torch_mlu  # noqa: F401
+        device = 'mlu'
+    except ImportError:
+        pass
+
     if device is None:
         raise NotImplementedError(
             'Supports only CUDA or NPU. If your device is CUDA or NPU, '
@@ -28,5 +34,7 @@ def get_torch_device_module():
         return torch.cuda
     elif device == 'npu':
         return torch.npu
+    elif device == 'mlu':
+        return torch.mlu
     else:
         raise NotImplementedError
