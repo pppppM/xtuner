@@ -129,6 +129,7 @@ class BaseOrigDataset(Dataset):
             num_tokens = np.load(_cached_file)
             logger.info(f"Load num_tokens from cache: {os.path.basename(self.annotation)}")
         else:
+            logger.info(f"Start calculating the cache of num_tokens: {os.path.basename(self.annotation)}")
             num_tokens = self.count_tokens_for_pack(file_cache_dir)
         return num_tokens
 
@@ -153,7 +154,7 @@ class BaseOrigDataset(Dataset):
             tokenized = list(
                 tqdm(
                     executor.map(self.pre_tokenize_fn_for_pack, dataset_shard,
-                                 chunksize=max(1, len(dataset_shard) // self.tokenizer_workers)),
+                                 chunksize=min(max(1, len(dataset_shard) // self.tokenizer_workers), 500)),
                     desc=desc,
                     total=len(dataset_shard)))
 
