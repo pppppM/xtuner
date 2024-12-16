@@ -10,7 +10,10 @@ import numpy as np
 import torch
 from torch import distributed as dist
 from tqdm import tqdm
+from xtuner._lite import get_logger
 
+
+logger = get_logger()
 
 def calculate_json_sha256(file_path):
     with open(file_path, 'rb') as f:
@@ -34,10 +37,10 @@ class JsonDataset(torch.utils.data.Dataset):
                  path,
                  sample_ratio=1.0,
                  tokenize_fn=None,
-                 cache_dir=None):
+                 cache_dir=None,
+                 max_length=None):
         super().__init__()
 
-        assert sample_ratio <= 1
         self.tokenize_fn = tokenize_fn
         self.path = path
         self.tokenizer_workers = int(os.environ.get('XTUNER_TOKENIZE_WORKERS', 8))
@@ -75,15 +78,26 @@ class JsonDataset(torch.utils.data.Dataset):
         with open(self.path) as f:
             dataset = json.load(f)
 
-        num_samples = int(len(dataset) * sample_ratio)
-        sampled = random.sample([i for i in range(len(dataset))], num_samples)
-        self.sampled = sampled
+        _sampled = [i for i in range(len(dataset))]
+
+        if max_length is not None: 
+            assert isinstance(max_length, int)
+            _filtered = [x for i, x in enumerate(_sampled) if num_tokens[i] < max_length]
+
+            if len(_filtered) < len(_sampled):
+                missed_num = len(_sampled) - len(_filtered)
+                logger.warning(f"{path} has {missed_num} prompt length>{max_length}, discard.")
+
+            _sampled = _filtered
+
+        _target_num_samples = int(len(_sampled) * sample_ratio)
+        self.sampled = _sampled * int(sample_ratio)
+        self.sampled.extend(random.sample(_sampled, _target_num_samples - len(self.sampled)))
 
         if num_tokens is not None:
-            num_tokens = num_tokens[sampled]
+            num_tokens = num_tokens[self.sampled]
 
         self.num_tokens = num_tokens
-
         self.dataset = None
 
     def count_tokens(self, cache_dir=None):
@@ -109,11 +123,12 @@ class JsonDataset(torch.utils.data.Dataset):
         dataset_shard = dataset[start:end]
 
         desc = f'[Rank {rank}] {self.path}'
+        chunk_size = min(1024, max(1, len(dataset_shard) // self.tokenizer_workers))
         with ProcessPoolExecutor(max_workers=self.tokenizer_workers) as executor:
             tokenized = list(
                 tqdm(
                     executor.map(self.tokenize_fn, dataset_shard,
-                                 chunksize=max(1, len(dataset_shard) // self.tokenizer_workers)),
+                                 chunksize=chunk_size),
                     desc=desc,
                     total=len(dataset_shard)))
 
