@@ -15,7 +15,8 @@ def megatron_internvl2_casual(meta_model,
                               pp_mesh=None,
                               mp_policy=None,
                               recompute_ratio=1.0,
-                              reshard_after_forward=True):
+                              reshard_after_forward=True,
+                              small_model=True):  # if 70b model, set to False
     if tp_mesh.size() > 1:
         raise NotImplementedError
 
@@ -51,8 +52,6 @@ def megatron_internvl2_casual(meta_model,
         for layer_cur, layer_next in zip(meta_model.language_model.model.layers[:-1],
                                          meta_model.language_model.model.layers[1:]):
             layer_cur.set_modules_to_forward_prefetch([layer_next])
-
-    small_model = False
 
     if small_model:
         meta_model.vision_model.apply(param_init_fn)

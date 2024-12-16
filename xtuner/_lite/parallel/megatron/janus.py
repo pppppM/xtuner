@@ -89,7 +89,7 @@ def megatron_janus_casual(meta_model,
             mp_policy=mp_policy,
             reshard_after_forward=reshard_after_forward)  # False is zero2, True is zero3
 
-        # TODO: 有 bug
+        # TODO: Bug
         # model.set_reshard_after_backward(False)
 
     elif freeze_style == 'mode2':
