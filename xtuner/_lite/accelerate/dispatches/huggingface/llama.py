@@ -148,7 +148,7 @@ def llama_casual_forward(
     cache_position: Optional[torch.LongTensor] = None,
     num_logits_to_keep: int = 0,
     label_shifted = False,
-    **kwargs: Unpack[KwargsForCausalLM],
+    **kwargs,
 ) -> Union[Tuple, CausalLMOutputWithPast]:
     r"""
     Args:
