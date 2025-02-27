@@ -9,7 +9,7 @@ from concurrent.futures import ProcessPoolExecutor
 
 import numpy as np
 import torch
-from mmengine import mkdir_or_exist
+from mmengine.utils import mkdir_or_exist
 from torch import distributed as dist
 from tqdm import tqdm
 

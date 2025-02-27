@@ -1,15 +1,10 @@
 # Copyright (c) OpenMMLab. All rights reserved.
-import json
-import math
 import os
-import random
 import re
-
-from torch import distributed as dist
-from tqdm import tqdm
 
 from xtuner._lite import get_logger
 
+from ..hf_hub import HuggingfaceDataset
 from ..json import JsonDataset
 from ..jsonl import JsonlDataset
 
@@ -18,69 +13,10 @@ logger = get_logger()
 DATASET_CLS_MAP = {".jsonl": JsonlDataset, ".json": JsonDataset}
 
 
-def load_hf_dataset(path, split="train", sample_ratio=1.0, cache_dir=None, map_fn=None):
-    from datasets import load_dataset
-
-    dataset = load_dataset(path)[split]
-
-    if map_fn:
-        dataset = dataset.map(map_fn, num_proc=8)
-
-    if sample_ratio != 1:
-        ori_samples = len(dataset)
-        target_samples = int(sample_ratio * ori_samples)
-        indices = random.choices([i for i in range(ori_samples)], k=target_samples)
-        dataset = dataset.select(indices)
-
-    dataset = dataset.to_list()
-
-    # if init_fn:
-    #     dataset = init_fn(dataset)
-
-    # if cache_dir and isinstance(dataset, CacheDataset):
-    #     dataset.cache(cache_dir)
-
-    return dataset
-
-
-def load_from_cache(cache_dir, init_fn):
-    if dist.is_available():
-        world_size = dist.get_world_size()
-        rank = dist.get_rank()
-    else:
-        world_size = 1
-        rank = 0
-
-    sub_cache_dirs = []
-    for _path in tqdm(os.listdir(cache_dir)):
-        path = os.path.join(cache_dir, _path)
-        if os.path.isdir(path):
-            sub_cache_dirs.append(path)
-
-    num_dsets = len(sub_cache_dirs)
-    avg_num = math.ceil(num_dsets / world_size)
-    start = rank * avg_num
-    end = min((rank + 1) * avg_num, num_dsets)
-    desc = f"[Rank {rank}] Loading Cached Dataset"
-
-    rank_datasets = []
-    for ind in tqdm(range(start, end), desc=desc):
-        dset = init_fn(sub_cache_dirs[ind])
-        rank_datasets.append(dset)
-
-    if dist.is_available() and world_size > 1:
-        dist.barrier()
-        buffers = [None] * world_size
-        dist.all_gather_object(buffers, rank_datasets)
-        world_datasets = []
-        for dsets_per_rank in buffers:
-            world_datasets.extend(dsets_per_rank)
-
-        assert len(world_datasets) == num_dsets
-    else:
-        world_datasets = rank_datasets
-
-    return world_datasets
+def load_hf_dataset(
+    path, split="train", sample_ratio=1.0, cache_dir=None, map_fn=None, max_length=None
+):
+    return HuggingfaceDataset(path, sample_ratio, map_fn, cache_dir, max_length)
 
 
 def load_local_datasets(
@@ -249,35 +185,15 @@ def load_datasets(
         datasets.extend(local_datasets)
 
     if len(hf_inds):
-        cached_infos = {}
         for i in range(len(hf_inds)):
-            if cache_dir:
-                digits = len(str(abs(len(hf_inds))))
-                cache_id = f"cache-hf-{i+1:0{digits}}-of-" f"{len(hf_inds):0{digits}}"
-                sub_cache_dir = os.path.join(cache_dir, cache_id)
-            else:
-                sub_cache_dir = None
             dset = load_hf_dataset(
                 hf_paths[i],
                 sample_ratio=hf_sample_ratios[i],
                 map_fn=hf_map_fns[i],
-                cache_dir=sub_cache_dir,
+                cache_dir=cache_dir,
                 max_length=max_length,
             )
             datasets.append(dset)
-            breakpoint()
-            if cache_dir:
-                infos = {
-                    "path": hf_paths[i],
-                    "num_samples": dset.num_samples,
-                    "num_tokens": dset.total_tokens,
-                }
-                cached_infos[cache_id] = infos
-
-        if cache_dir:
-            _path = os.path.join(cache_dir, "hf_infos.json")
-            with open(_path, "w") as f:
-                json.dump(cached_infos, f)
 
     return datasets
 

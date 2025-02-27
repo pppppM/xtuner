@@ -81,7 +81,7 @@ class GenerateMixin:
         self.graph_position_ids = position_ids
         self.graph_cache_position = position_ids.clone()
 
-        # 在新 stream 中预热
+        # warmup
         with torch.cuda.stream(s):
             with torch.no_grad():
                 self.graph_logits = self(
@@ -97,7 +97,7 @@ class GenerateMixin:
                     prefilling=False,
                 ).logits
 
-        # 等待预热完成
+        # wait warmup
         torch.cuda.current_stream().wait_stream(s)
         self.cuda_graph = torch.cuda.CUDAGraph()
         with torch.cuda.graph(self.cuda_graph):

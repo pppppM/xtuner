@@ -10,8 +10,9 @@ from .device import get_device, get_torch_device_module
 _LOGGER = None
 
 
-def log_format(debug=False):
-    formatter = "[XTuner][{time:YYYY-MM-DD HH:mm:ss}][<level>{level}</level>]"
+def log_format(rank, debug=False):
+    formatter = f"[XTuner][RANK {rank}]"
+    formatter += "[{time:YYYY-MM-DD HH:mm:ss}][<level>{level}</level>]"
 
     if debug:
         formatter += "[<cyan>{name}</cyan>:"
@@ -25,9 +26,19 @@ def log_format(debug=False):
 def get_logger(level="INFO"):
     global _LOGGER
     if _LOGGER is None:
+        rank = int(os.environ.get("RANK", 0))
         # Remove the original logger in Python to prevent duplicate printing.
         logger.remove()
-        logger.add(sys.stderr, level=level, format=log_format(debug=level == "DEBUG"))
+        if rank == 0:
+            logger.add(
+                sys.stderr, level=level, format=log_format(rank, debug=level == "DEBUG")
+            )
+        else:
+            logger.add(
+                sys.stderr,
+                level="DEBUG",
+                format=log_format(rank, debug=level == "DEBUG"),
+            )
         _LOGGER = logger
     return _LOGGER
 

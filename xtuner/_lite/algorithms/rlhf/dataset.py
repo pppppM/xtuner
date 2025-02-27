@@ -1,14 +1,14 @@
 # Copyright (c) OpenMMLab. All rights reserved.
 import json
+from dataclasses import asdict
+from typing import List
 
 import numpy as np
 import torch
 from torch import nn
 
-from xtuner._lite.chat.messages.chat import ChatMsg
-from xtuner._lite.datasets import OPENAI_CONVERT_MAP
-
-from ..sft import SftCollator, SftTokenizeFunction
+from ..sft import SftCollator
+from .trajectory import Trajectory
 
 
 class InferDataset(torch.utils.data.Dataset):
@@ -18,7 +18,6 @@ class InferDataset(torch.utils.data.Dataset):
         assert len(prompts) == len(responses)
         self.prompts = prompts
         self.responses = responses
-        self.policies = None
 
     def __len__(self):
         return len(self.prompts)
@@ -34,19 +33,15 @@ class InferDataset(torch.utils.data.Dataset):
         return {"input_ids": input_ids, "labels": labels, "num_tokens": len(input_ids)}
 
 
-FASTER = False
-
-
-class RewardBuffer(torch.utils.data.Dataset):
-    def __init__(self, clip_min=-5, clip_max=5, normalize=True, faster=False):
+class TrajectoryDataset(torch.utils.data.Dataset):
+    def __init__(self, score_ranges=(-5, 5), score_normalize=True):
         super().__init__()
 
-        self.clip_min = clip_min
-        self.clip_max = clip_max
+        self.score_ranges = score_ranges
 
-        self.normalize = normalize
+        self.score_normalize = score_normalize
 
-        if self.normalize:
+        if self.score_normalize:
             self.bn = nn.BatchNorm1d(1, momentum=None, affine=False)
         else:
             self.bn = None
@@ -73,26 +68,36 @@ class RewardBuffer(torch.utils.data.Dataset):
     def num_total_tokens(self):
         return self._num_total_tokens
 
-    def update(self, trajectories):
-        rewards = [data["reward"] for data in trajectories]
+    def update(self, trajectories: List[Trajectory]) -> None:
+        trajectories = [asdict(traj) for traj in trajectories]
+        rewards = [data["score"] for data in trajectories]
 
         for i in range(len(trajectories)):
-            trajectories[i]["ori_reward"] = trajectories[i]["reward"]
+            trajectories[i]["ori_score"] = trajectories[i]["score"]
 
         rewards = torch.tensor(rewards)
 
         self._current_mean = rewards.mean().item()
 
-        rewards = rewards.clip(self.clip_min, self.clip_max)
+        rewards = rewards.clip(self.score_ranges[0], self.score_ranges[1])
 
-        if self.normalize:
+        if self.score_normalize:
             self.bn.train()
             _ = self.bn(rewards.unsqueeze(-1))
             self.bn.eval()
             rewards = self.bn(rewards.unsqueeze(-1))
 
         for i in range(len(trajectories)):
-            trajectories[i]["reward"] = rewards[i].item()
+            trajectories[i]["score"] = rewards[i].item()
+
+            _prompt_ids = trajectories[i]["prompt_ids"]
+            _response_ids = trajectories[i]["response_ids"]
+
+            trajectories[i]["input_ids"] = _prompt_ids + _response_ids
+            trajectories[i]["labels"] = (
+                [-100] * (len(_prompt_ids) - 1) + _response_ids + [-100]
+            )
+            trajectories[i]["num_tokens"] = len(trajectories[i]["input_ids"])
 
         num_total_tokens = 0
         num_action_tokens = 0
@@ -129,25 +134,25 @@ class RewardBuffer(torch.utils.data.Dataset):
         return self._trajectories[item]
 
 
-class PPOTokenizeFunction(SftTokenizeFunction):
-    def __init__(self, tokenizer, chat_template, raw_format="openai", sys_prompt=None):
-        super().__init__(tokenizer, chat_template, raw_format)
-        self.sys_prompt = sys_prompt
-
-    def __call__(self, item):
-        formatter = OPENAI_CONVERT_MAP[self.raw_format]
-        msg = formatter(item)
-        if self.sys_prompt is not None:
-            sys_msg = ChatMsg(role="system", content=self.sys_prompt)
-            msg.messages = [sys_msg] + msg.messages
-        tokenized = msg.tokenize(self.tokenizer, self.chat_template)
-
-        return tokenized
-
-
-class RewardBufferCollator(SftCollator):
+class TrajectoryCollator(SftCollator):
     def __call__(self, instances):
         data = super().__call__(instances)
-        data["rewards"] = [item["reward"] for item in instances]
+
+        data["advantages"] = [item["advantages"] for item in instances]
+        data["returns"] = [item["returns"] for item in instances]
+        data["old_logprobs"] = [item["old_logprobs"] for item in instances]
+        data["ref_logprobs"] = [item["ref_logprobs"] for item in instances]
+        data["old_values"] = [item["old_values"] for item in instances]
+
+        return data
+
+
+class GRPOTrajectoryCollator(SftCollator):
+    def __call__(self, instances):
+        data = super().__call__(instances)
+
+        data["advantages"] = [item["advantages"] for item in instances]
+        data["old_logprobs"] = [item["old_logprobs"] for item in instances]
+        data["ref_logprobs"] = [item["ref_logprobs"] for item in instances]
 
         return data

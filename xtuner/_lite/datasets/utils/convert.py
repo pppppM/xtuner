@@ -186,10 +186,17 @@ def official_openai(data):
         return ChatMessages.from_dict({"messages": data})
 
 
+def hh_rlhf_trl_style(data):
+    return ChatMessages.from_dict(
+        {"messages": [{"role": "user", "content": data["prompt"]}]}
+    )
+
+
 OPENAI_CONVERT_MAP = {
     "llava": llava_to_openai,
     "llava_interleave": llava_to_openai_interleave,
     "alpaca": Alpaca2Openai.convert,
     "xtuner": XTunerFormat2Openai.convert,
     "openai": official_openai,
+    "trl-internal-testing/hh-rlhf-trl-style": hh_rlhf_trl_style,
 }

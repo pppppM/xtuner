@@ -282,7 +282,7 @@ class ModelConfig:
     vocab_size: int
 
 
-class PatchedCausalLM(ABC, nn.Module):
+class PatchedLLM(ABC, nn.Module):
     def __init__(self, model: PreTrainedModel, fsdp_config: FSDPConfig):
         super().__init__()
 

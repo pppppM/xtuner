@@ -51,7 +51,7 @@ from xtuner._lite.patches.base import (
     FSDPConfig,
     HFCheckpointLoader,
     ModelConfig,
-    PatchedCausalLM,
+    PatchedLLM,
     clip_grad_norm_,
     lazy_init_fn,
 )
@@ -174,7 +174,7 @@ def paged_attention_decoding_fake(
     return torch.empty_like(query_states.transpose(1, 2).transpose(0, 1)[:bs])
 
 
-class CUDAPatchedLlamaForCausalLM(PatchedCausalLM, GenerateMixin):
+class CUDAPatchedLlama(PatchedLLM, GenerateMixin):
     device_type = "cuda"
     rotary_emb_cls = LlamaRotaryEmbedding
     attn_cls = LlamaAttention
@@ -211,10 +211,10 @@ class CUDAPatchedLlamaForCausalLM(PatchedCausalLM, GenerateMixin):
             input_layouts=(Replicate(),),
             desired_input_layouts=(Replicate(),),
         ),
-        "lm_head": PrepareModuleInput(
-            input_layouts=(Replicate(),),
-            desired_input_layouts=(Replicate(),),
-        ),
+        # "lm_head": PrepareModuleInput(
+        #     input_layouts=(Replicate(),),
+        #     desired_input_layouts=(Replicate(),),
+        # ),
     }
 
     chat_template = HybridChatTemplate(
@@ -229,7 +229,10 @@ class CUDAPatchedLlamaForCausalLM(PatchedCausalLM, GenerateMixin):
     )
 
     def __init__(
-        self, model: LlamaForCausalLM, fsdp_config: Optional[FSDPConfig] = None
+        self,
+        model: LlamaForCausalLM,
+        fsdp_config: Optional[FSDPConfig] = None,
+        is_reward: bool = False,
     ):
         super().__init__(model, fsdp_config)
 
@@ -243,9 +246,11 @@ class CUDAPatchedLlamaForCausalLM(PatchedCausalLM, GenerateMixin):
         else:
             self._rank0_model = None
 
+        self.is_reward = is_reward
         self._patched_model = self.dispatch_hf_code(model)
 
         self.init_model_config(fsdp_config)
+        self.init_device_mesh(fsdp_config)
 
         self._fsdp_config = fsdp_config
         if self._fsdp_config is not None:
@@ -306,7 +311,7 @@ class CUDAPatchedLlamaForCausalLM(PatchedCausalLM, GenerateMixin):
 
         return model
 
-    def fully_shard(self, fsdp_config: FSDPConfig) -> None:
+    def init_device_mesh(self, fsdp_config: FSDPConfig) -> None:
         if fsdp_config.ep_size > 1:
             raise NotImplementedError
 
@@ -367,12 +372,12 @@ class CUDAPatchedLlamaForCausalLM(PatchedCausalLM, GenerateMixin):
         )
         self._data_mesh = _data_mesh[data_mesh_name]
 
+    def fully_shard(self, fsdp_config: FSDPConfig) -> None:
+        checkpoint_loader = HFCheckpointLoader(self.patched_model.config._name_or_path)
         param_init_fn = partial(
             lazy_init_fn,
             module2name={mod: name for name, mod in self.patched_model.named_modules()},
-            checkpoint_loader=HFCheckpointLoader(
-                self.patched_model.config._name_or_path
-            ),
+            checkpoint_loader=checkpoint_loader,
         )
 
         mp_policy = MixedPrecisionPolicy(
@@ -400,10 +405,10 @@ class CUDAPatchedLlamaForCausalLM(PatchedCausalLM, GenerateMixin):
 
             attention = layer.self_attn
 
-            if tp_mesh.size() > 1:
+            if self.tp_mesh.size() > 1:
                 parallelize_module(
                     module=layer,
-                    device_mesh=tp_mesh,
+                    device_mesh=self.tp_mesh,
                     parallelize_plan=self.layer_tp_plan,
                 )
 
@@ -419,7 +424,7 @@ class CUDAPatchedLlamaForCausalLM(PatchedCausalLM, GenerateMixin):
 
             fully_shard(
                 layer,
-                mesh=fsdp_mesh,
+                mesh=self.fsdp_mesh,
                 mp_policy=mp_policy,
                 reshard_after_forward=fsdp_config.reshard_after_forward,
                 offload_policy=CPUOffloadPolicy() if fsdp_config.cpu_offload else None,
@@ -435,32 +440,71 @@ class CUDAPatchedLlamaForCausalLM(PatchedCausalLM, GenerateMixin):
             ):
                 layer_cur.set_modules_to_forward_prefetch([layer_next])
 
-        self.patched_model.lm_head.apply(param_init_fn)
         self.patched_model.model.embed_tokens.apply(param_init_fn)
         self.patched_model.model.norm.apply(param_init_fn)
 
-        if tp_mesh.size() > 1:
+        if self.is_reward:
+            self.patched_model.lm_head.to_empty(device=self.device_type, recurse=False)
+            lm_head_weight = checkpoint_loader.load("lm_head.weight")
+            if lm_head_weight is None:
+                lm_head_weight = checkpoint_loader.load("score.weight")
+
+            lm_head_bias = None
+            if self.patched_model.lm_head.bias is not None:
+                lm_head_bias = checkpoint_loader.load("lm_head.bias")
+                if lm_head_bias is None:
+                    lm_head_bias = checkpoint_loader.load("score.bias")
+
+            assert lm_head_weight is not None
+
+            if lm_head_weight.shape != self.patched_model.lm_head.weight.shape:
+                lm_head_weight = lm_head_weight[
+                    : self.patched_model.lm_head.weight.size(0)
+                ]
+                assert lm_head_weight.shape == self.patched_model.lm_head.weight.shape
+                self.patched_model.lm_head.weight.data.copy_(
+                    lm_head_weight.to(self.patched_model.lm_head.weight.dtype)
+                )
+
+            else:
+                raise ValueError("Unable to load the correct lm_head weights.")
+
+            if lm_head_bias is not None:
+                if lm_head_bias.shape != self.patched_model.lm_head.bias.shape:
+                    lm_head_bias = lm_head_bias[
+                        : self.patched_model.lm_head.bias.size(0)
+                    ]
+                    assert lm_head_bias.shape == self.patched_model.lm_head.bias.shape
+                    self.patched_model.lm_head.bias.data.copy_(
+                        lm_head_weight.to(self.patched_model.lm_head.bias.dtype)
+                    )
+                else:
+                    raise ValueError("Unable to load the correct lm_head bias.")
+        else:
+            self.patched_model.lm_head.apply(param_init_fn)
+
+        if self.tp_mesh.size() > 1:
             _weight = self.patched_model.lm_head.weight
             _dtensor_weight = nn.Parameter(
-                distribute_tensor(_weight, tp_mesh, [Replicate()])
+                distribute_tensor(_weight, self.tp_mesh, [Replicate()])
             )
             self.patched_model.lm_head.register_parameter("weight", _dtensor_weight)
 
             _weight = self.patched_model.model.norm.weight
             _dtensor_weight = nn.Parameter(
-                distribute_tensor(_weight, tp_mesh, [Replicate()])
+                distribute_tensor(_weight, self.tp_mesh, [Replicate()])
             )
             self.patched_model.model.norm.register_parameter("weight", _dtensor_weight)
 
             parallelize_module(
                 self.patched_model,
-                tp_mesh,
+                self.tp_mesh,
                 self.casual_tp_plan,
             )
 
         fully_shard(
             self.patched_model,
-            mesh=fsdp_mesh,
+            mesh=self.fsdp_mesh,
             mp_policy=mp_policy,
             reshard_after_forward=fsdp_config.reshard_after_forward,
             offload_policy=CPUOffloadPolicy() if fsdp_config.cpu_offload else None,
@@ -483,7 +527,7 @@ class CUDAPatchedLlamaForCausalLM(PatchedCausalLM, GenerateMixin):
         if "block_table" in kwargs and kwargs["block_table"] is not None:
             # generating
             if "prefilling" in kwargs and kwargs["prefilling"]:
-                return CUDAPatchedLlamaForCausalLM.patched_attn_prefilling(
+                return CUDAPatchedLlama.patched_attn_prefilling(
                     self,
                     hidden_states=hidden_states,
                     position_embeddings=position_embeddings,
@@ -496,7 +540,7 @@ class CUDAPatchedLlamaForCausalLM(PatchedCausalLM, GenerateMixin):
                     **kwargs,
                 )
             else:
-                return CUDAPatchedLlamaForCausalLM.patched_attn_decoding(
+                return CUDAPatchedLlama.patched_attn_decoding(
                     self,
                     hidden_states=hidden_states,
                     position_embeddings=position_embeddings,
@@ -509,7 +553,7 @@ class CUDAPatchedLlamaForCausalLM(PatchedCausalLM, GenerateMixin):
                     **kwargs,
                 )
         else:
-            return CUDAPatchedLlamaForCausalLM.patched_attn_forward_training(
+            return CUDAPatchedLlama.patched_attn_forward_training(
                 self,
                 hidden_states=hidden_states,
                 position_embeddings=position_embeddings,
@@ -738,7 +782,7 @@ class CUDAPatchedLlamaForCausalLM(PatchedCausalLM, GenerateMixin):
     ]:
         if "block_table" in kwargs and kwargs["block_table"] is not None:
             if "prefilling" in kwargs and kwargs["prefilling"]:
-                return CUDAPatchedLlamaForCausalLM.patched_layer_forward_training(
+                return CUDAPatchedLlama.patched_layer_forward_training(
                     self,
                     hidden_states=hidden_states,
                     attention_mask=attention_mask,
@@ -751,7 +795,7 @@ class CUDAPatchedLlamaForCausalLM(PatchedCausalLM, GenerateMixin):
                     **kwargs,
                 )
             else:
-                return CUDAPatchedLlamaForCausalLM.patched_layer_forward_decoding(
+                return CUDAPatchedLlama.patched_layer_forward_decoding(
                     self,
                     hidden_states=hidden_states,
                     attention_mask=attention_mask,
@@ -764,7 +808,7 @@ class CUDAPatchedLlamaForCausalLM(PatchedCausalLM, GenerateMixin):
                     **kwargs,
                 )
         else:
-            return CUDAPatchedLlamaForCausalLM.patched_layer_forward_training(
+            return CUDAPatchedLlama.patched_layer_forward_training(
                 self,
                 hidden_states=hidden_states,
                 attention_mask=attention_mask,
@@ -826,7 +870,7 @@ class CUDAPatchedLlamaForCausalLM(PatchedCausalLM, GenerateMixin):
         return outputs
 
     @staticmethod
-    @torch.compile(fullgraph=True)
+    # @torch.compile(fullgraph=True)
     def patched_layer_forward_decoding(
         self,
         hidden_states: torch.Tensor,
@@ -1248,9 +1292,5 @@ class CUDAPatchedLlamaForCausalLM(PatchedCausalLM, GenerateMixin):
         return grad_norm
 
 
-class MLUPatchedLlamaForCausalLM(CUDAPatchedLlamaForCausalLM):
+class MLUPatchedLlama(CUDAPatchedLlama):
     device_type = "mlu"
-
-
-class MuxiPatchedLlamaForCausalLM(CUDAPatchedLlamaForCausalLM):
-    device_type = "muxi"

@@ -39,6 +39,17 @@ class HybridChatTemplate(BaseModel):
     action_start_token: Optional[str] = None
     action_end_token: Optional[str] = None
 
+    def get_stop_token_ids(self, tokenizer):
+        stop_token_ids = []
+        for word in self.stop_words:
+            word_ids = tokenizer.encode(word, add_special_tokens=False)
+            if len(word_ids) > 1:
+                raise NotImplementedError(
+                    f"Does not support stop word({word}) greater than 1 token({word_ids})"
+                )
+            stop_token_ids.append(word_ids[0])
+        return stop_token_ids
+
     @property
     def mm_token_maps(self) -> Dict[str, int]:
         """Return a dictionary that maps multimodal tokens to corresponding

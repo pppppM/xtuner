@@ -21,12 +21,12 @@ from transformers.utils import logging
 
 from xtuner._lite.chat import HybridChatTemplate
 from xtuner._lite.patches.base import FSDPConfig, ModelConfig
-from xtuner._lite.patches.llama import CUDAPatchedLlamaForCausalLM, all_to_all
+from xtuner._lite.patches.llama import CUDAPatchedLlama, all_to_all
 
 logger = logging.get_logger(__name__)
 
 
-class CUDAPatchedQwen2ForCausalLM(CUDAPatchedLlamaForCausalLM):
+class CUDAPatchedQwen2(CUDAPatchedLlama):
     rotary_emb_cls = Qwen2RotaryEmbedding
     attn_cls = Qwen2Attention
     layer_cls = Qwen2DecoderLayer
@@ -85,7 +85,7 @@ class CUDAPatchedQwen2ForCausalLM(CUDAPatchedLlamaForCausalLM):
 
             # generating
             if "prefilling" in kwargs and kwargs["prefilling"]:
-                return CUDAPatchedLlamaForCausalLM.patched_attn_prefilling(
+                return CUDAPatchedLlama.patched_attn_prefilling(
                     self,
                     hidden_states=hidden_states,
                     position_embeddings=position_embeddings,
@@ -98,7 +98,7 @@ class CUDAPatchedQwen2ForCausalLM(CUDAPatchedLlamaForCausalLM):
                     **kwargs,
                 )
             else:
-                return CUDAPatchedLlamaForCausalLM.patched_attn_decoding(
+                return CUDAPatchedLlama.patched_attn_decoding(
                     self,
                     hidden_states=hidden_states,
                     position_embeddings=position_embeddings,
@@ -111,7 +111,7 @@ class CUDAPatchedQwen2ForCausalLM(CUDAPatchedLlamaForCausalLM):
                     **kwargs,
                 )
         else:
-            return CUDAPatchedQwen2ForCausalLM.patched_attn_forward_training(
+            return CUDAPatchedQwen2.patched_attn_forward_training(
                 self,
                 hidden_states=hidden_states,
                 position_embeddings=position_embeddings,

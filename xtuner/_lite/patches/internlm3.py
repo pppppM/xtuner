@@ -7,10 +7,10 @@ from xtuner._lite.modelings.internlm3.modeling_internlm3 import (
     InternLM3RotaryEmbedding,
 )
 
-from .llama import CUDAPatchedLlamaForCausalLM
+from .llama import CUDAPatchedLlama
 
 
-class CUDAPatchedInternLM3ForCausalLM(CUDAPatchedLlamaForCausalLM):
+class CUDAPatchedInternLM3(CUDAPatchedLlama):
     rotary_emb_cls = InternLM3RotaryEmbedding
     attn_cls = InternLM3Attention
     layer_cls = InternLM3DecoderLayer
@@ -37,9 +37,5 @@ class CUDAPatchedInternLM3ForCausalLM(CUDAPatchedLlamaForCausalLM):
             ).to(self.device_type)
 
 
-class MLUPatchedInternLM3ForCausalLM(CUDAPatchedInternLM3ForCausalLM):
+class MLUPatchedInternLM3(CUDAPatchedInternLM3):
     device_type = "mlu"
-
-
-class MuxiPatchedInternLM3ForCausalLM(CUDAPatchedInternLM3ForCausalLM):
-    device_type = "muxi"
