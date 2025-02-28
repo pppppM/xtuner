@@ -448,6 +448,7 @@ class CUDAPatchedLlama(PatchedLLM, GenerateMixin):
             lm_head_weight = checkpoint_loader.load("lm_head.weight")
             if lm_head_weight is None:
                 lm_head_weight = checkpoint_loader.load("score.weight")
+                logger.warning_once("lm_head.weight loaded from score.weight")
 
             lm_head_bias = None
             if self.patched_model.lm_head.bias is not None:
@@ -457,7 +458,7 @@ class CUDAPatchedLlama(PatchedLLM, GenerateMixin):
 
             assert lm_head_weight is not None
 
-            if lm_head_weight.shape != self.patched_model.lm_head.weight.shape:
+            if lm_head_weight.shape == self.patched_model.lm_head.weight.shape:
                 lm_head_weight = lm_head_weight[
                     : self.patched_model.lm_head.weight.size(0)
                 ]
