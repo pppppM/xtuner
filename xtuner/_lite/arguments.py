@@ -129,6 +129,7 @@ class RolloutArguments(BaseModel):
         DataloaderArguments,
         Parameter(help="Configuration for data loading during rollout"),
     ] = DataloaderArguments()
+    prompt_repeat_k: Annotated[int, Parameter(help="Prompt repeat times")] = 1
     max_length: Annotated[
         int, Parameter(help="Maximum total length of input and generated sequences")
     ] = 2048
@@ -201,6 +202,7 @@ class PretrainArguments(BaseModel):
 
 
 class PPOAlgorithmArguements(BaseModel):
+    alg: Annotated[str, Parameter(help="Alg name")] = "ppo"
     kl_coef: Annotated[
         float, Parameter(help="KL divergence coefficient for PPO")
     ] = 0.01
@@ -220,8 +222,9 @@ class PPOAlgorithmArguements(BaseModel):
         UpdateActorArguments, Parameter(help="Configuration for actor model updates")
     ]
     update_critic: Annotated[
-        UpdateCriticArguments, Parameter(help="Configuration for critic model updates")
-    ]
+        Optional[UpdateCriticArguments], 
+        Parameter(help="Configuration for critic model updates"),
+    ] = None
     pretrain: Annotated[
         Optional[PretrainArguments],
         Parameter(help="Configuration for pretraining phase"),
@@ -238,7 +241,7 @@ class PPOArguments(BaseModel):
     actor: ModelArguments
     reward: ModelArguments
     reference: ModelArguments
-    critic: ModelArguments
+    critic: Optional[ModelArguments] = None
     algorithm: PPOAlgorithmArguements
     engine: EngineArguments = EngineArguments()
     dataset: DatasetArguments

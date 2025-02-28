@@ -14,7 +14,11 @@ from .loss import (
     compute_kl_rewards,
     gather_logprobs,
 )
-from .trajectory import Trajectory, collect_ppo_trajectories
+from .trajectory import (
+    Trajectory, 
+    collect_ppo_trajectories,
+    collect_trajectories
+)
 
 __all__ = [
     "InferDataset",
@@ -34,4 +38,5 @@ __all__ = [
     "gather_logprobs",
     "Trajectory",
     "collect_ppo_trajectories",
+    "collect_trajectories",
 ]
