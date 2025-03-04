@@ -1,0 +1,48 @@
+actor:
+  model: meta-llama/Llama-3.1-8B-Instruct
+  mesh_prefix: 'actor'
+  cpu_offload: True
+  reshard_after_forward: False
+
+reference:
+  model: meta-llama/Llama-3.1-8B-Instruct
+  mesh_prefix: 'reference'
+  cpu_offload: True
+  reshard_after_forward: True
+  requires_grad: False
+
+reward:
+  model: meta-llama/Llama-3.1-8B-Instruct
+  mesh_prefix: 'reward'
+  reshard_after_forward: True
+  cpu_offload: True
+  requires_grad: False
+
+dataset:
+  tokenizer: meta-llama/Llama-3.1-8B-Instruct
+  paths: 
+    - trl-internal-testing/hh-rlhf-trl-style
+  sources:
+    - huggingface
+  formats:
+    - trl-internal-testing/hh-rlhf-trl-style
+
+algorithm:
+  alg: 'grpo'
+  normalize_score: False
+  rollout:
+    max_new_tokens: 128
+    dataloader:
+      global_batch_size: 32
+    prompt_repeat_k: 4
+  update_actor:
+    optim:
+      lr: 5e-6
+      weight_decay: 0
+      max_grad_norm: 1
+    dataloader:
+      global_batch_size: 128
+      micro_batch_size: 1
+
+engine:
+  debug: True
